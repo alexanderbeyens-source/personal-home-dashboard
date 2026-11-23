@@ -69,6 +69,27 @@ describe("useLiveResource", () => {
     expect(result.current.updatedAt?.getTime()).toBeGreaterThanOrEqual(lastSuccess!.getTime());
   });
 
+  it("uses a separate refresh URL for explicit refreshes", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ value: "cached" }))
+      .mockResolvedValueOnce(jsonResponse({ value: "regenerated" }));
+
+    const { result } = renderHook(() => useLiveResource<{ value: string }>(
+      "/api/briefing",
+      60_000,
+      "/api/briefing?refresh=1",
+    ));
+    await waitFor(() => expect(result.current.data?.value).toBe("cached"));
+
+    await act(async () => result.current.refresh());
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/api/briefing",
+      "/api/briefing?refresh=1",
+    ]);
+    expect(result.current.data?.value).toBe("regenerated");
+  });
+
   it("does not start an overlapping request", async () => {
     let resolveResponse!: (response: Response) => void;
     fetchMock.mockReturnValueOnce(new Promise((resolve) => {

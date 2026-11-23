@@ -4,6 +4,7 @@ import type { LiveResource } from "../types";
 export function useLiveResource<T>(
   url: string,
   refreshInterval = 5 * 60 * 1000,
+  refreshUrl = url,
 ): LiveResource<T> {
   const [resource, setResource] = useState<Omit<LiveResource<T>, "refresh">>({
     data: null,
@@ -28,7 +29,7 @@ export function useLiveResource<T>(
       updatedAt: null,
     });
 
-    const load = async () => {
+    const load = async (requestUrl = url) => {
       if (inFlight) return inFlight;
 
       controller = new AbortController();
@@ -42,7 +43,7 @@ export function useLiveResource<T>(
 
       const request = (async () => {
         try {
-          const response = await fetch(url, { signal: requestController.signal });
+          const response = await fetch(requestUrl, { signal: requestController.signal });
           const payload: unknown = await response.json();
           if (!response.ok) {
             if (response.status === 401 && active) {
@@ -89,9 +90,9 @@ export function useLiveResource<T>(
       }
     };
 
-    refreshRef.current = load;
-    void load();
-    const timer = window.setInterval(() => void load(), refreshInterval);
+    refreshRef.current = () => load(refreshUrl);
+    void load(url);
+    const timer = window.setInterval(() => void load(url), refreshInterval);
     return () => {
       active = false;
       window.clearInterval(timer);

@@ -6,7 +6,9 @@ import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { Auth } from "@auth/core";
 import GitHub from "@auth/core/providers/github";
+import { createDailyBriefingService } from "./briefing.js";
 import { loadNbaData, loadNbaPlayers, mapSportsEvents } from "./data.js";
+import { createEconomicLoaders, createEconomicsService } from "./economics.js";
 import { createNewsService } from "./news.js";
 
 const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
@@ -446,7 +448,78 @@ async function getHomeAssistant() {
   };
 }
 
+const apiRouteCache = new Map();
+const apiRouteInFlight = new Map();
+const sharedApiRouteTtl = new Map([
+  ["/api/weather", 5 * 60 * 1000],
+  ["/api/calendar", 5 * 60 * 1000],
+  ["/api/finance", 60 * 60 * 1000],
+  ["/api/home-assistant", 5 * 60 * 1000],
+  ["/api/projects", 30 * 60 * 1000],
+  ["/api/sports/nba", 60 * 1000],
+  ["/api/sports/nba/players", 5 * 60 * 1000],
+  ["/api/sports/premier-league", 60 * 1000],
+  ["/api/sports/belgian-football", 5 * 60 * 1000],
+]);
+const economicsService = createEconomicsService({
+  loaders: createEconomicLoaders({ fetchJson, fetchText }),
+});
+
 async function routeApi(url) {
+  if (url.pathname === "/api/briefing" || url.pathname === "/api/news") {
+    return routeApiUncached(url);
+  }
+  const ttlMs = sharedApiRouteTtl.get(url.pathname);
+  if (!ttlMs) return routeApiUncached(url);
+
+  const refresh = url.searchParams.get("refresh") === "1";
+  const currentTime = Date.now();
+  const cached = apiRouteCache.get(url.pathname);
+  if (!refresh && cached && cached.expiresAt > currentTime) return cached.value;
+
+  const existing = apiRouteInFlight.get(url.pathname);
+  if (existing) return existing;
+
+  let request;
+  request = (async () => {
+    try {
+      const value = await routeApiUncached(url);
+      apiRouteCache.set(url.pathname, { value, expiresAt: Date.now() + ttlMs });
+      return value;
+    } catch (error) {
+      if (refresh) apiRouteCache.delete(url.pathname);
+      throw error;
+    } finally {
+      if (apiRouteInFlight.get(url.pathname) === request) {
+        apiRouteInFlight.delete(url.pathname);
+      }
+    }
+  })();
+  apiRouteInFlight.set(url.pathname, request);
+  return request;
+}
+
+async function routeApiUncached(url) {
+  if (url.pathname === "/api/economy") {
+    if (url.searchParams.has("refresh") && url.searchParams.get("refresh") !== "1") {
+      const error = new Error("Unknown economy refresh option.");
+      error.status = 400;
+      throw error;
+    }
+    return economicsService.get({ refresh: url.searchParams.get("refresh") === "1" });
+  }
+
+  if (url.pathname === "/api/briefing") {
+    if (url.searchParams.has("refresh") && url.searchParams.get("refresh") !== "1") {
+      const error = new Error("Unknown briefing refresh option.");
+      error.status = 400;
+      throw error;
+    }
+    const refresh = url.searchParams.get("refresh") === "1";
+    if (refresh) newsService.clearCache();
+    return dailyBriefingService.get({ refresh });
+  }
+
   if (url.pathname === "/api/weather") {
     const latitude = Number(process.env.WEATHER_LAT || 50.9894);
     const longitude = Number(process.env.WEATHER_LON || 5.0506);
@@ -491,6 +564,7 @@ async function routeApi(url) {
       category,
       sourceId: url.searchParams.get("source") ?? undefined,
       since: url.searchParams.get("since") ?? (isLegacyRequest ? "all" : "7d"),
+      sort: url.searchParams.get("sort") ?? "relevant",
       limit: url.searchParams.has("limit")
         ? url.searchParams.get("limit")
         : isLegacyRequest
@@ -527,6 +601,15 @@ async function routeApi(url) {
       events: mapSportsEvents(scoreboardResult.value),
       news: newsResult.status === "fulfilled" ? newsResult.value.articles.slice(0, 5) : [],
       warnings,
+    };
+  }
+
+  if (url.pathname === "/api/sports/belgian-football") {
+    const result = await newsService.loadSource("sporza-belgian-football");
+    return {
+      events: [],
+      news: result.articles.slice(0, 2),
+      warnings: result.warnings.map((warning) => warning.message),
     };
   }
 
@@ -574,6 +657,61 @@ async function routeApi(url) {
 
   return null;
 }
+
+async function loadDailyBriefingInputs({ refresh = false } = {}) {
+  const jobs = [
+    { key: "economics", source: "Economic indicators", path: "/api/economy" },
+    { key: "weather", source: "Weather · Open-Meteo", path: "/api/weather" },
+    { key: "finance", source: "Reference rates · Frankfurter", path: "/api/finance" },
+    { key: "nba", source: "NBA · ESPN", path: "/api/sports/nba" },
+    { key: "nbaPlayers", source: "NBA player rosters · ESPN", path: "/api/sports/nba/players" },
+    { key: "premierLeague", source: "Premier League · ESPN and BBC Sport", path: "/api/sports/premier-league" },
+    { key: "belgianFootball", source: "Belgian football · Sporza", path: "/api/sports/belgian-football" },
+    ...["belgium", "international", "technology-ai", "economy-business", "sport"].map((category) => ({
+      key: category,
+      source: `News · ${category}`,
+      path: `/api/news?category=${category}&since=7d&sort=relevant&limit=20`,
+    })),
+  ];
+  if (process.env.CALENDAR_ICS_URL) {
+    jobs.push({ key: "agenda", source: "Calendar · ICS", path: "/api/calendar" });
+  }
+
+  const results = await Promise.allSettled(jobs.map(({ path }) => {
+    const requestPath = refresh
+      ? `${path}${path.includes("?") ? "&" : "?"}refresh=1`
+      : path;
+    return routeApi(new URL(requestPath, "http://localhost"));
+  }));
+  const inputs = {
+    newsByCategory: {},
+    agendaConfigured: Boolean(process.env.CALENDAR_ICS_URL),
+    warnings: [],
+  };
+  results.forEach((result, index) => {
+    const job = jobs[index];
+    if (result.status === "fulfilled") {
+      if (["belgium", "international", "technology-ai", "economy-business", "sport"].includes(job.key)) {
+        inputs.newsByCategory[job.key] = result.value;
+      } else {
+        inputs[job.key] = result.value;
+      }
+      return;
+    }
+    inputs.warnings.push({
+      source: job.source,
+      message: result.reason instanceof Error
+        ? result.reason.message
+        : "Data is temporarily unavailable.",
+      stale: false,
+    });
+  });
+  return inputs;
+}
+
+const dailyBriefingService = createDailyBriefingService({
+  loadInputs: loadDailyBriefingInputs,
+});
 
 async function serveStatic(pathname, response) {
   const dist = resolve(root, "dist");

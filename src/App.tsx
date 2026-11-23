@@ -2,8 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon } from "./components/Icon";
 import { Panel, ResourceState } from "./components/Panel";
 import { useLiveResource } from "./hooks/useLiveResource";
+import { MobilityHomePage } from "./MobilityHomePage";
 import type {
   CalendarData,
+  DailyBriefing,
+  EconomicData,
+  EconomicMetric,
   FinanceData,
   HomeData,
   LiveResource,
@@ -18,7 +22,6 @@ const newsCategories = [
   { id: "international", label: "International" },
   { id: "technology-ai", label: "Technology & AI" },
   { id: "economy-business", label: "Economy & business" },
-  { id: "data-software", label: "Data & software" },
   { id: "sport", label: "Sport" },
 ] as const;
 
@@ -83,31 +86,431 @@ function formatEventTimestamp(date: string) {
   }).format(parsed);
 }
 
-function NewsPanel() {
-  const resource = useLiveResource<NewsResponse>("/api/news?view=briefing&since=7d");
-  const articles = resource.data?.articles ?? [];
+function formatEconomicPeriod(period: string) {
+  const semester = period.match(/^(\d{4})-S([12])$/);
+  if (semester) return `H${semester[2]} ${semester[1]}`;
+  const month = period.match(/^(\d{4})-(\d{2})$/);
+  if (month) {
+    return new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric" })
+      .format(new Date(Number(month[1]), Number(month[2]) - 1, 1));
+  }
+  const dateOnly = period.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const date = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(period);
+  if (Number.isNaN(date.getTime())) return period;
+  return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" }).format(date);
+}
+
+function EconomicSparkline({ history, label }: {
+  history: { period: string; value: number }[];
+  label: string;
+}) {
+  if (history.length < 2) return null;
+  const values = history.map(({ value }) => value);
+  const min = Math.min(...values);
+  const range = Math.max(...values) - min || 1;
+  const points = values.map((value, index) => {
+    const x = (index / (values.length - 1)) * 100;
+    const y = 31 - ((value - min) / range) * 25;
+    return `${x},${y}`;
+  }).join(" ");
+  return (
+    <svg className="economic-sparkline" viewBox="0 0 100 36" role="img" aria-label={`${label} historical trend`}>
+      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+function EconomicMetricCard({ title, metric }: { title: string; metric: EconomicMetric | null }) {
+  return (
+    <article className="economic-metric-card">
+      <div className="economic-metric-heading">
+        <h4>{title}</h4>
+        {(metric?.stale || metric?.observationStale) && (
+          <span className="economic-stale" title={metric.stale
+            ? "Refresh failed; showing the previous successful observation."
+            : "The observation is older than its expected update cycle."}>STALE</span>
+        )}
+      </div>
+      {metric ? (
+        <>
+          <strong className="economic-metric-value">{metric.value.toFixed(metric.unit === "EUR/kWh" ? 4 : 2)} <small>{metric.unit}</small></strong>
+          <p className="economic-metric-period">{formatEconomicPeriod(metric.period)} · {metric.frequency.split(" · ")[0]}</p>
+          {metric.sourceUpdatedAt && (
+            <p className="economic-metric-note">Dataset updated {formatPublishedDate(metric.sourceUpdatedAt)}</p>
+          )}
+          <EconomicSparkline history={metric.history} label={title} />
+          {metric.change !== null && (
+            <p className="economic-metric-change">
+              {metric.unit === "% y/y"
+                ? `${metric.change > 0 ? "+" : ""}${metric.change.toFixed(1)} pp vs previous period`
+                : metric.unit === "%"
+                  ? `${metric.change > 0 ? "+" : ""}${metric.change.toFixed(2)} pp vs previous period`
+                  : `${metric.change > 0 ? "+" : ""}${metric.change.toFixed(4)} ${metric.unit} vs previous period`}
+            </p>
+          )}
+          {metric.disclaimer && <p className="economic-metric-note">{metric.disclaimer}</p>}
+          {metric.consumptionBand && <p className="economic-metric-note">{metric.consumptionBand} · all taxes included</p>}
+          <a className="economic-source-link" href={metric.sourceUrl} target="_blank" rel="noopener noreferrer">{metric.source}</a>
+        </>
+      ) : (
+        <p className="economic-unavailable">Currently unavailable</p>
+      )}
+    </article>
+  );
+}
+
+function EconomicCockpit() {
+  const finance = useLiveResource<FinanceData>("/api/finance", 60 * 60 * 1000, "/api/finance?refresh=1");
+  const economics = useLiveResource<EconomicData>("/api/economy", 60 * 60 * 1000, "/api/economy?refresh=1");
+  const resources = [finance, economics];
+  const hasData = resources.some((resource) => resource.data !== null);
+  const resource: LiveResource<unknown> = {
+    data: hasData ? { finance: finance.data, economics: economics.data } : null,
+    loading: !hasData && resources.some((item) => item.loading),
+    refreshing: hasData && resources.some((item) => item.loading || item.refreshing),
+    error: resources.map((item) => item.error).filter(Boolean).join(" · ") || null,
+    updatedAt: resources.map((item) => item.updatedAt)
+      .filter((date): date is Date => date !== null)
+      .sort((first, second) => first.getTime() - second.getTime())[0] ?? null,
+    refresh: async () => {
+      await Promise.all(resources.map((item) => item.refresh()));
+    },
+  };
+  const data = economics.data;
+  const imie = data?.imiePrice;
 
   return (
-    <Panel title="The briefing" eyebrow="LIVE DESK · NEWS" icon="news" className="news-panel" resource={resource}>
-      <NewsWarnings warnings={resource.data?.warnings ?? []} compact />
-      {articles.length > 0 ? (
-        <div className="news-list">
-          {articles.slice(0, 5).map((article, index) => (
-            <a className="news-item" href={article.link} target="_blank" rel="noreferrer" key={`${article.link}-${index}`}>
-              <span className="news-index">{String(index + 1).padStart(2, "0")}</span>
-              <span className="news-copy">
-                <span className="news-title">{article.title}</span>
-                <span className="news-meta">{article.source} <i /> {getNewsCategoryLabel(article.category)} <i /> {formatPublishedDate(article.publishedAt)}</span>
-              </span>
-              <Icon name="arrow" size={15} className="news-arrow" />
-            </a>
+    <Panel title="Economy & markets" eyebrow="ECONOMIC COCKPIT" icon="chart" className="finance-panel" resource={resource}>
+      {data?.warnings.length ? (
+        <div className="economic-warnings" role="status">
+          {data.warnings.map((warning) => (
+            <p key={`${warning.source}-${warning.message}`}>
+              <strong>{warning.source}:</strong> {warning.message}
+              {warning.stale ? " Showing the last successful observation." : ""}
+            </p>
           ))}
         </div>
-      ) : (
-        <ResourceState loading={resource.loading} empty="No recent stories are available." />
+      ) : null}
+      <section className="economic-equities">
+        <div>
+          <p className="economic-kicker">GLOBAL EQUITIES · IMIE</p>
+          <h3>SPDR MSCI ACWI IMI</h3>
+          <p>Broad developed- and emerging-market equity exposure</p>
+        </div>
+        {imie ? (
+          <div className="economic-equity-price">
+            {(imie.stale || imie.observationStale) && (
+              <span className="economic-stale" title={imie.stale
+                ? "Refresh failed; showing the previous successful observation."
+                : "The observation is older than its expected update cycle."}>STALE</span>
+            )}
+            <strong>€{imie.value.toFixed(2)}</strong>
+            <span>{formatEconomicPeriod(imie.period)} · official closing price</span>
+            <a href={imie.sourceUrl} target="_blank" rel="noopener noreferrer">{imie.source}</a>
+          </div>
+        ) : <p className="economic-unavailable">Official market price unavailable.</p>}
+      </section>
+
+      <section className="economic-subsection">
+        <div className="economic-section-heading">
+          <h3>ECB policy rates</h3>
+          <a href={data?.policyRates?.sourceUrl ?? "https://data.ecb.europa.eu/data/datasets/FM"} target="_blank" rel="noopener noreferrer">ECB source</a>
+        </div>
+        {data?.policyRates?.rates.length ? (
+          <div className="economic-rate-grid">
+            {data.policyRates.rates.map((rate) => (
+              <article className="economic-rate-card" key={rate.id}>
+                <div className="economic-metric-heading">
+                  <h4>{rate.label}</h4>
+                  {(rate.stale || rate.observationStale) && (
+                    <span className="economic-stale" title={rate.stale
+                      ? "Refresh failed; showing the previous successful observation."
+                      : "The observation is older than its expected update cycle."}>STALE</span>
+                  )}
+                </div>
+                <strong>{rate.value.toFixed(2)}<small>%</small></strong>
+                <span>Data as of {formatEconomicPeriod(rate.period)}</span>
+                <span>{rate.lastChangeDate
+                  ? `Last changed ${formatEconomicPeriod(rate.lastChangeDate)}`
+                  : "No change observed in the 7-year history window"}</span>
+                <EconomicSparkline history={rate.history} label={rate.label} />
+              </article>
+            ))}
+          </div>
+        ) : <p className="economic-unavailable">Policy rates are currently unavailable.</p>}
+      </section>
+
+      <section className="economic-subsection">
+        <h3>World, inflation & housing</h3>
+        <div className="economic-metric-grid">
+          <EconomicMetricCard title="Global real GDP growth" metric={data?.worldGrowth ?? null} />
+          <EconomicMetricCard title="Belgium · HICP" metric={data?.belgiumInflation ?? null} />
+          <EconomicMetricCard title="Euro area · HICP" metric={data?.euroAreaInflation ?? null} />
+          <EconomicMetricCard title="Belgian new mortgages" metric={data?.mortgageRates ?? null} />
+        </div>
+      </section>
+
+      <section className="economic-subsection">
+        <h3>Belgian household energy</h3>
+        <div className="economic-metric-grid">
+          <EconomicMetricCard title="Electricity" metric={data?.electricityPrices ?? null} />
+          <EconomicMetricCard title="Natural gas" metric={data?.gasPrices ?? null} />
+        </div>
+        <p className="economic-section-note">Eurostat consumer prices for representative household consumption bands; includes taxes and levies. Not wholesale prices.</p>
+      </section>
+
+      <section className="economic-subsection economic-fx">
+        <div className="economic-section-heading">
+          <h3>Daily FX reference</h3>
+          <a href="https://www.frankfurter.app/" target="_blank" rel="noopener noreferrer">Frankfurter · ECB data</a>
+        </div>
+        {finance.data ? (
+          <>
+            <p className="economic-metric-period">1 EUR · {formatEconomicPeriod(finance.data.date)} · reference rates, not personal account balances</p>
+            <div className="rates-grid">
+              {Object.entries(finance.data.rates).map(([currency, value]) => (
+                <div className="rate-tile" key={currency}><span>1 EUR <Icon name="arrow" size={11} /></span><strong>{value.toFixed(3)} <small>{currency}</small></strong></div>
+              ))}
+            </div>
+          </>
+        ) : <p className="economic-unavailable">Reference rates are currently unavailable.</p>}
+      </section>
+
+      <p className="panel-footnote">ECB rates and lending data · Eurostat HICP and household energy prices · IMIE issuer market close. Monthly and half-yearly figures are labeled by their observation period.</p>
+    </Panel>
+  );
+}
+
+function BriefingStoryCard({ story, featured = false }: {
+  story: DailyBriefing["topStories"][number];
+  featured?: boolean;
+}) {
+  return (
+    <article className={`briefing-story${featured ? " is-featured" : ""}`}>
+      <a className="briefing-story-title" href={story.link} target="_blank" rel="noopener noreferrer">
+        {story.title}<Icon name="arrow" size={13} />
+      </a>
+      <p className="briefing-story-summary">
+        {story.summary ?? "The source did not provide a summary; open the original report for details."}
+      </p>
+      {featured && story.whySelected && (
+        <p className="briefing-story-why"><strong>Why selected:</strong> {story.whySelected}</p>
       )}
-      <a className="news-center-link" href="/news">Open the news center <Icon name="arrow" size={13} /></a>
-      <p className="panel-footnote">Up to five stories across six categories · original sources linked</p>
+      <div className="briefing-story-meta">
+        <a href={story.link} target="_blank" rel="noopener noreferrer">{story.source}</a>
+        <span>{getNewsCategoryLabel(story.category)}</span>
+        <time dateTime={story.publishedAt ?? undefined}>{formatPublishedDate(story.publishedAt)}</time>
+      </div>
+      {story.coverage.length > 0 && (
+        <div className="briefing-coverage">
+          Also covered by {story.coverage.map((item, index) => (
+            <span key={`${item.source}-${item.link}`}>
+              {index > 0 && ", "}
+              <a href={item.link} target="_blank" rel="noopener noreferrer">{item.source}</a>
+            </span>
+          ))}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function BriefingStoryList({
+  stories,
+  empty,
+}: {
+  stories: DailyBriefing["sections"]["technology"];
+  empty: string;
+}) {
+  return stories.length
+    ? <div className="briefing-story-list">{stories.map((story) => <BriefingStoryCard key={story.id} story={story} />)}</div>
+    : <p className="briefing-empty">{empty}</p>;
+}
+
+function BriefingMatches({ matches }: { matches: DailyBriefing["sports"]["nba"]["matches"] }) {
+  if (!matches.length) return <p className="briefing-empty">No matches in the past 24 hours or next 24 hours.</p>;
+  return (
+    <div className="briefing-match-list">
+      {matches.map((match) => (
+        <a className="briefing-match" href={match.link} target="_blank" rel="noopener noreferrer" key={match.id}>
+          <span className="briefing-match-label">{match.label}</span>
+          <strong>{match.name}</strong>
+          <span>{match.competitors.map((team) => `${team.name} ${team.score || "—"}`).join(" · ")}</span>
+          <time dateTime={match.date}>{formatEventTimestamp(match.date)}</time>
+          <small>{match.source} scoreboard</small>
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function DailyBriefingPanel() {
+  const resource = useLiveResource<DailyBriefing>(
+    "/api/briefing",
+    15 * 60 * 1000,
+    "/api/briefing?refresh=1",
+  );
+  const briefing = resource.data;
+  const calendarWarning = briefing?.warnings.some((warning) => warning.source === "Calendar · ICS");
+
+  return (
+    <Panel
+      title="Daily briefing"
+      eyebrow={briefing ? new Intl.DateTimeFormat(undefined, { weekday: "long", month: "short", day: "numeric" }).format(new Date(briefing.generatedAt)).toUpperCase() : "YOUR DAY · BRIEFING"}
+      icon="news"
+      className="daily-briefing-panel"
+      resource={resource}
+    >
+      {briefing ? (
+        <>
+          <p className="briefing-generated">
+            Generated {formatPublishedDate(briefing.generatedAt)} · cached for 15 minutes
+            {briefing.stale && <strong> · showing the last successful version</strong>}
+          </p>
+          {briefing.warnings.length > 0 && (
+            <div className="briefing-warnings" role="status">
+              {briefing.warnings.slice(0, 4).map((warning) => (
+                <p key={`${warning.source}-${warning.message}`}>
+                  <strong>{warning.source}:</strong> {warning.message}
+                  {warning.stale ? " Showing cached data where available." : ""}
+                </p>
+              ))}
+              {briefing.warnings.length > 4 && <p>{briefing.warnings.length - 4} more source notices.</p>}
+            </div>
+          )}
+
+          <section className="briefing-section briefing-top-stories">
+            <h3>Top stories <span>· {briefing.topStories.length} selected, maximum 5</span></h3>
+            {briefing.topStories.length ? (
+              <div className="briefing-story-list">
+                {briefing.topStories.map((story) => <BriefingStoryCard key={story.id} story={story} featured />)}
+              </div>
+            ) : (
+              <p className="briefing-empty">No recent stories are available from the active feeds.</p>
+            )}
+          </section>
+
+          <div className="briefing-topic-grid">
+            <section className="briefing-section">
+              <h3>Belgium & international</h3>
+              <BriefingStoryList stories={briefing.sections.belgiumInternational} empty="No additional Belgium or international reports beyond the top stories." />
+            </section>
+            <section className="briefing-section">
+              <h3>Technology & AI</h3>
+              <BriefingStoryList stories={briefing.sections.technology} empty="No additional technology reports beyond the top stories." />
+            </section>
+            <section className="briefing-section briefing-economy">
+              <h3>Economy & business</h3>
+              <BriefingStoryList stories={briefing.economy.stories} empty="No additional business reports beyond the top stories." />
+              {briefing.economy.indicatorDevelopments.length > 0 && (
+                <div className="briefing-economic-updates">
+                  <strong>Official indicator developments</strong>
+                  {briefing.economy.indicatorDevelopments.map((development) => (
+                    <article key={development.id}>
+                      <h4>{development.title}</h4>
+                      <p>{development.summary}</p>
+                      <a href={development.sourceUrl} target="_blank" rel="noopener noreferrer">
+                        {development.source} · {formatEconomicPeriod(development.period)}
+                      </a>
+                    </article>
+                  ))}
+                </div>
+              )}
+              <div className="briefing-reference-rates">
+                <strong>Reference figures · {briefing.economy.referenceLabel}</strong>
+                {briefing.economy.referenceRates ? (
+                  <>
+                    <span>Rates for {briefing.economy.referenceRates.date} · 1 EUR</span>
+                    <div className="briefing-rate-list">
+                      {Object.entries(briefing.economy.referenceRates.rates).map(([currency, value]) => (
+                        <span key={currency}>{currency} {value.toFixed(3)}</span>
+                      ))}
+                    </div>
+                    <a href="https://www.frankfurter.app/" target="_blank" rel="noopener noreferrer">Frankfurter · ECB reference data</a>
+                  </>
+                ) : <p className="briefing-empty">Reference rates are currently unavailable.</p>}
+              </div>
+            </section>
+          </div>
+
+          <section className="briefing-section briefing-sports">
+            <h3>Sports briefing</h3>
+            <div className="briefing-sports-grid">
+              <div>
+                <h4>NBA</h4>
+                <BriefingMatches matches={briefing.sports.nba.matches} />
+                {briefing.sports.nba.featuredPlayers.length > 0 && (
+                  <div className="briefing-player-links">
+                    {briefing.sports.nba.featuredPlayers.map((player) => (
+                      <a href={player.url} target="_blank" rel="noopener noreferrer" key={player.name}>
+                        {player.name} · {player.team} <span>ESPN roster</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+                <BriefingStoryList stories={briefing.sports.nba.headlines} empty="No NBA headlines are available." />
+              </div>
+              <div>
+                <h4>Premier League</h4>
+                <BriefingMatches matches={briefing.sports.premierLeague.matches} />
+                <BriefingStoryList stories={briefing.sports.premierLeague.headlines} empty="No Premier League headlines are available." />
+              </div>
+              <div>
+                <h4>Belgian football</h4>
+                {briefing.sports.belgianFootball.length ? (
+                  <div className="briefing-story-list">
+                    {briefing.sports.belgianFootball.map((story) => <BriefingStoryCard key={story.id} story={story} />)}
+                  </div>
+                ) : <p className="briefing-empty">No Jupiler Pro League or Rode Duivels reports are available.</p>}
+              </div>
+            </div>
+            <p className="briefing-footnote">Scoreboard entries are labeled live, result or scheduled. Headlines are reports; no transfer-rumour or official-announcement status is inferred.</p>
+          </section>
+
+          <section className="briefing-section briefing-today">
+            <h3>Today</h3>
+            <div className="briefing-today-grid">
+              <div>
+                <h4>Agenda</h4>
+                {briefing.today.agendaStatus === "not-configured"
+                  ? <p className="briefing-empty">Calendar is not connected.</p>
+                  : briefing.today.agendaStatus === "unavailable" || calendarWarning
+                    ? <p className="briefing-empty">Calendar data is currently unavailable.</p>
+                    : briefing.today.agendaEvents.length
+                      ? (
+                        <ul className="briefing-agenda-list">
+                          {briefing.today.agendaEvents.map((event) => (
+                            <li key={`${event.start}-${event.title}`}>
+                              <time dateTime={event.start}>{formatTime(event.start)}</time>
+                              <span><strong>{event.title}</strong>{event.location && <small>{event.location}</small>}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )
+                      : <p className="briefing-empty">No upcoming calendar events.</p>}
+              </div>
+              <div>
+                <h4>Weather</h4>
+                {briefing.today.weather ? (
+                  <div className="briefing-weather">
+                    <strong>{Math.round(briefing.today.weather.temperature)}° · {weatherLabel(briefing.today.weather.weatherCode, briefing.today.weather.isDay)}</strong>
+                    <span>{briefing.today.weather.location} · feels like {Math.round(briefing.today.weather.apparentTemperature)}°</span>
+                    <span>Wind {Math.round(briefing.today.weather.windSpeed)} km/h · humidity {briefing.today.weather.humidity}%</span>
+                    <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a>
+                  </div>
+                ) : <p className="briefing-empty">Weather data is currently unavailable.</p>}
+              </div>
+            </div>
+          </section>
+          <a className="briefing-news-center-link" href="/news">
+            Browse all news and filters <Icon name="arrow" size={13} />
+          </a>
+        </>
+      ) : (
+        <ResourceState loading={resource.loading} empty="The briefing is currently unavailable." />
+      )}
     </Panel>
   );
 }
@@ -158,10 +561,11 @@ function NewsCenter({
   const [category, setCategory] = useState<(typeof newsCategories)[number]["id"]>("belgium");
   const [sourceId, setSourceId] = useState("all");
   const [since, setSince] = useState("7d");
+  const [sort, setSort] = useState("relevant");
   const [limit, setLimit] = useState(5);
   const sourceQuery = sourceId === "all" ? "" : `&source=${encodeURIComponent(sourceId)}`;
   const resource = useLiveResource<NewsResponse>(
-    `/api/news?category=${category}&since=${since}&limit=${limit}${sourceQuery}`,
+    `/api/news?category=${category}&since=${since}&sort=${sort}&limit=${limit}${sourceQuery}`,
   );
   const articles = resource.data?.articles ?? [];
   const availableSources = resource.data?.sources ?? [];
@@ -175,6 +579,7 @@ function NewsCenter({
         </a>
         <div className="topbar-right">
           <a className="news-home-link" href="/">Dashboard</a>
+          <a className="news-home-link" href="/mobility">Mobility &amp; Home</a>
           <span className="account-name">{user.name || "Signed in"}</span>
           <button className="sign-out-button" onClick={() => onSignOut(csrfToken)}>Sign out</button>
         </div>
@@ -184,7 +589,7 @@ function NewsCenter({
       <section className="news-center-intro">
         <p className="eyebrow">NORTHSTAR · NEWS DESK</p>
         <h1>News center<span>.</span></h1>
-        <p>Reliable headlines across Belgium, the world, technology, business, software and sport.</p>
+        <p>Relevant headlines across Belgium, the world, technology, business and sport.</p>
       </section>
 
       <Panel title="Latest stories" eyebrow={getNewsCategoryLabel(category).toUpperCase()} icon="news" className="news-center-panel" resource={resource}>
@@ -230,6 +635,16 @@ function NewsCenter({
               <option value="all">Any date</option>
             </select>
           </label>
+          <label>
+            <span>Sort by</span>
+            <select value={sort} onChange={(event) => {
+              setLimit(5);
+              setSort(event.target.value);
+            }}>
+              <option value="relevant">Most relevant</option>
+              <option value="recent">Most recent</option>
+            </select>
+          </label>
         </div>
         <NewsWarnings warnings={resource.data?.warnings ?? []} />
         {articles.length ? (
@@ -243,6 +658,7 @@ function NewsCenter({
                 <a className="news-center-title" href={article.link} target="_blank" rel="noopener noreferrer">
                   {article.title}<Icon name="arrow" size={14} />
                 </a>
+                {article.description && <p className="news-center-description">{article.description}</p>}
                 <div className="news-center-meta">
                   <span>{article.source}</span>
                   <span>{formatPublishedDate(article.publishedAt)}</span>
@@ -307,9 +723,22 @@ function ScoreRow({ event }: { event: SportsData["events"][number] }) {
 }
 
 function SportsPanel() {
-  const nba = useLiveResource<SportsData>("/api/sports/nba");
-  const nbaPlayers = useLiveResource<Pick<SportsData, "featuredPlayers" | "warnings">>("/api/sports/nba/players");
-  const premierLeague = useLiveResource<SportsData>("/api/sports/premier-league");
+  const nba = useLiveResource<SportsData>("/api/sports/nba", 5 * 60 * 1000, "/api/sports/nba?refresh=1");
+  const nbaPlayers = useLiveResource<Pick<SportsData, "featuredPlayers" | "warnings">>(
+    "/api/sports/nba/players",
+    5 * 60 * 1000,
+    "/api/sports/nba/players?refresh=1",
+  );
+  const premierLeague = useLiveResource<SportsData>(
+    "/api/sports/premier-league",
+    5 * 60 * 1000,
+    "/api/sports/premier-league?refresh=1",
+  );
+  const belgianFootball = useLiveResource<SportsData>(
+    "/api/sports/belgian-football",
+    5 * 60 * 1000,
+    "/api/sports/belgian-football?refresh=1",
+  );
   const nbaEvents = nba.data?.events ?? [];
   const priorityNbaEvents = [...nbaEvents].sort((a, b) => {
     const statePriority = (state: typeof a.state) => state === "in" ? 0 : state === "pre" ? 1 : state === "post" ? 2 : 3;
@@ -327,11 +756,11 @@ function SportsPanel() {
     /lakers|camara|mitchell|trail blazers/i.test(item.title),
   );
   const featuredPlayers = nbaPlayers.data?.featuredPlayers ?? [];
-  const sportsResources = [nba, nbaPlayers, premierLeague];
+  const sportsResources = [nba, nbaPlayers, premierLeague, belgianFootball];
   const hasSportsData = sportsResources.some((resource) => resource.data !== null);
   const sportsResource: LiveResource<unknown> = {
     data: hasSportsData
-      ? { nba: nba.data, nbaPlayers: nbaPlayers.data, premierLeague: premierLeague.data }
+      ? { nba: nba.data, nbaPlayers: nbaPlayers.data, premierLeague: premierLeague.data, belgianFootball: belgianFootball.data }
       : null,
     loading: !hasSportsData && sportsResources.some((resource) => resource.loading),
     refreshing: hasSportsData && sportsResources.some((resource) => resource.loading || resource.refreshing),
@@ -339,6 +768,7 @@ function SportsPanel() {
       nba.error && `NBA: ${nba.error}`,
       nbaPlayers.error && `NBA player information: ${nbaPlayers.error}`,
       premierLeague.error && `Premier League: ${premierLeague.error}`,
+      belgianFootball.error && `Belgian football: ${belgianFootball.error}`,
     ].filter(Boolean).join(" · ") || null,
     updatedAt: sportsResources.map((resource) => resource.updatedAt)
       .filter((date): date is Date => date !== null)
@@ -393,7 +823,25 @@ function SportsPanel() {
           <p className="feed-link">Premier League headlines load with the live score feed.</p>
         )}
       </div>
-      <p className="panel-footnote">Scores and player rosters from ESPN · live league table opens at PremierLeague.com</p>
+      <div className="sports-section premier-section">
+        <div className="subsection-title"><span className="sport-indicator belgian-football" />Belgian football</div>
+        {(belgianFootball.data?.news ?? []).length ? (
+          <div className="belgian-football-headlines">
+            {belgianFootball.data!.news.slice(0, 2).map((article) => (
+              <a className="sports-headline" href={article.link} target="_blank" rel="noreferrer" key={article.id}>
+                <span>{article.sportGroup === "red-devils" ? "RED DEVILS" : "JUPILER PRO LEAGUE"}</span>
+                {article.title}<Icon name="arrow" size={14} />
+              </a>
+            ))}
+          </div>
+        ) : (
+          <ResourceState loading={belgianFootball.loading} empty="No Jupiler Pro League or Red Devils headlines are available." />
+        )}
+        {(belgianFootball.data?.warnings ?? []).map((warning) => (
+          <p className="widget-warning" key={warning}>{warning}</p>
+        ))}
+      </div>
+      <p className="panel-footnote">NBA and Premier League scores from ESPN · Belgian football headlines from tagged Sporza coverage</p>
     </Panel>
   );
 }
@@ -410,11 +858,10 @@ function Dashboard({
   onSignOut: (csrfToken: string) => void;
 }) {
   const now = useClock();
-  const weather = useLiveResource<WeatherData>("/api/weather", 20 * 60 * 1000);
-  const agenda = useLiveResource<CalendarData>("/api/calendar");
-  const finance = useLiveResource<FinanceData>("/api/finance", 60 * 60 * 1000);
-  const home = useLiveResource<HomeData>("/api/home-assistant");
-  const projects = useLiveResource<Project[]>("/api/projects", 30 * 60 * 1000);
+  const weather = useLiveResource<WeatherData>("/api/weather", 20 * 60 * 1000, "/api/weather?refresh=1");
+  const agenda = useLiveResource<CalendarData>("/api/calendar", 5 * 60 * 1000, "/api/calendar?refresh=1");
+  const home = useLiveResource<HomeData>("/api/home-assistant", 5 * 60 * 1000, "/api/home-assistant?refresh=1");
+  const projects = useLiveResource<Project[]>("/api/projects", 30 * 60 * 1000, "/api/projects?refresh=1");
   const date = useMemo(() => new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(now), [now]);
   const time = useMemo(() => new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(now), [now]);
 
@@ -433,6 +880,7 @@ function Dashboard({
           <div className="connection-status"><span className="status-pulse" /> PUBLIC FEEDS</div>
           <div className="topbar-divider" />
           <span className="topbar-date">{date}</span>
+          <a className="news-home-link" href="/mobility">Mobility &amp; Home</a>
           <span className="account-name">{user.name || "Signed in"}</span>
           <button className="sign-out-button" onClick={() => onSignOut(csrfToken)}>Sign out</button>
         </div>
@@ -452,6 +900,7 @@ function Dashboard({
       </section>
 
       <section className="dashboard-grid" aria-label="Dashboard modules">
+        <DailyBriefingPanel />
         <Panel title="Today, in focus" eyebrow="DAILY OVERVIEW" icon="sun" className="overview-panel" resource={weather}>
           <div className="overview-content">
             <div className="weather-card">
@@ -503,25 +952,9 @@ function Dashboard({
           <p className="panel-footnote">Calendar details stay private · ICS connection</p>
         </Panel>
 
-        <NewsPanel />
         <SportsPanel />
 
-        <Panel title="Money, in perspective" eyebrow="PERSONAL FINANCE" icon="chart" className="finance-panel" resource={finance}>
-          {finance.data ? (
-            <>
-              <div className="finance-intro"><span className="finance-badge">EUR</span><p>Daily reference exchange rates <span>· {finance.data.date}</span></p></div>
-              <div className="rates-grid">
-                {Object.entries(finance.data.rates).map(([currency, value]) => (
-                  <div className="rate-tile" key={currency}><span>1 EUR <Icon name="arrow" size={11} /></span><strong>{value.toFixed(3)} <small>{currency}</small></strong></div>
-                ))}
-              </div>
-              <p className="finance-disclaimer">Public reference rates, not personal account balances. No bank connection.</p>
-            </>
-          ) : (
-            <ResourceState loading={finance.loading} empty="Live exchange rates will appear here." />
-          )}
-          <p className="panel-footnote">Daily reference data · Frankfurter / ECB</p>
-        </Panel>
+        <EconomicCockpit />
 
         <Panel title="Home, connected" eyebrow="SMART HOME" icon="home" className="home-panel" resource={home}>
           {homeDevices.length ? (
@@ -679,9 +1112,10 @@ function App() {
     signOutError,
     onSignOut: signOut,
   };
-  return window.location.pathname.replace(/\/+$/, "") === "/news"
-    ? <NewsCenter {...pageProps} />
-    : <Dashboard {...pageProps} />;
+  const path = window.location.pathname.replace(/\/+$/, "");
+  if (path === "/news") return <NewsCenter {...pageProps} />;
+  if (path === "/mobility") return <MobilityHomePage {...pageProps} />;
+  return <Dashboard {...pageProps} />;
 }
 
 export default App;

@@ -5,7 +5,6 @@ export const NEWS_CATEGORIES = [
   { id: "international", label: "International" },
   { id: "technology-ai", label: "Technology & AI" },
   { id: "economy-business", label: "Economy & business" },
-  { id: "data-software", label: "Data & software" },
   { id: "sport", label: "Sport" },
 ];
 
@@ -19,15 +18,6 @@ export const NEWS_SOURCES = [
     kind: "journalism",
     format: "xml",
     url: "https://www.vrt.be/vrtnws/nl.rss.headlines.xml",
-  },
-  {
-    id: "rtbf-belgique",
-    name: "RTBF Belgique",
-    category: "belgium",
-    language: "fr",
-    kind: "journalism",
-    format: "xml",
-    url: "https://rss.rtbf.be/article/rss/highlight_rtbfinfo_info-belgique.xml?source=internal",
   },
   {
     id: "bbc-news",
@@ -95,7 +85,7 @@ export const NEWS_SOURCES = [
   {
     id: "simon-willison",
     name: "Simon Willison",
-    category: "data-software",
+    category: "technology-ai",
     language: "en",
     kind: "personal-blog",
     format: "xml",
@@ -104,7 +94,7 @@ export const NEWS_SOURCES = [
   {
     id: "github-changelog",
     name: "GitHub Changelog",
-    category: "data-software",
+    category: "technology-ai",
     language: "en",
     kind: "official-company",
     format: "xml",
@@ -127,6 +117,16 @@ export const NEWS_SOURCES = [
     kind: "journalism",
     format: "xml",
     url: "https://feeds.bbci.co.uk/sport/football/premier-league/rss.xml",
+  },
+  {
+    id: "sporza-belgian-football",
+    name: "Sporza",
+    category: "sport",
+    language: "nl",
+    kind: "journalism",
+    format: "xml",
+    url: "https://sporza.be/nl.rss.xml",
+    includeTags: ["Jupiler Pro League", "Rode Duivels"],
   },
 ];
 
@@ -179,10 +179,13 @@ export function parseFeedXml(xml, source, limit = MAX_SOURCE_ARTICLES) {
   const root = parsed.rss ?? parsed.feed ?? parsed.RDF ?? parsed.rdf;
   if (!root || typeof root !== "object") throw new Error("Feed has an unsupported XML structure.");
   const container = root.channel ?? root;
-  const entries = toArray(container.item ?? container.entry ?? root.item ?? root.entry).slice(0, limit);
+  const entries = toArray(container.item ?? container.entry ?? root.item ?? root.entry)
+    .slice(0, source.includeTags ? Math.max(limit, MAX_SOURCE_ARTICLES) * 4 : limit);
+  const feedLanguage = normalizeLanguage(root["@_lang"] ?? container.language ?? source.language);
+  const allowedTags = source.includeTags?.map((tag) => tag.toLocaleLowerCase());
 
   return entries
-    .map((entry) => {
+    .map((entry, feedPosition) => {
       const title = normalizeText(readText(entry.title)).slice(0, 500);
       const link = resolveArticleUrl(decodeXmlEntities(readLink(entry.link)), source.url);
       const rawDate =
@@ -192,6 +195,10 @@ export function parseFeedXml(xml, source, limit = MAX_SOURCE_ARTICLES) {
         readText(entry.date);
       const publishedAt = normalizeDate(rawDate);
       if (!title || !link) return null;
+      const tags = readFeedTags(entry);
+      if (allowedTags && !tags.some((tag) => allowedTags.includes(tag.toLocaleLowerCase()))) return null;
+      const description = stripMarkup(readText(entry.summary ?? entry.description)).slice(0, 1000);
+      const language = normalizeLanguage(entry["@_lang"] ?? feedLanguage);
       return {
         id: canonicalizeUrl(link),
         title,
@@ -200,18 +207,27 @@ export function parseFeedXml(xml, source, limit = MAX_SOURCE_ARTICLES) {
         source: source.name,
         sourceKind: source.kind,
         category: source.category,
-        language: source.language,
+        language,
         publishedAt,
+        description,
+        tags,
+        feedPosition,
+        sportGroup: tags.some((tag) => tag.toLocaleLowerCase() === "jupiler pro league")
+          ? "jupiler-pro-league"
+          : tags.some((tag) => tag.toLocaleLowerCase() === "rode duivels")
+            ? "red-devils"
+            : undefined,
         coverage: [],
       };
     })
-    .filter(Boolean);
+    .filter(Boolean)
+    .slice(0, limit);
 }
 
 export function normalizeEspnNews(payload, source) {
   return (payload.articles ?? [])
     .slice(0, MAX_SOURCE_ARTICLES)
-    .map((article) => {
+    .map((article, feedPosition) => {
       const title = normalizeText(article.headline ?? article.title ?? "").slice(0, 500);
       const link = resolveArticleUrl(article.links?.web?.href, source.url);
       if (!title || !link) return null;
@@ -223,8 +239,9 @@ export function normalizeEspnNews(payload, source) {
         source: source.name,
         sourceKind: source.kind,
         category: source.category,
-        language: source.language,
+        language: normalizeLanguage(source.language),
         publishedAt: normalizeDate(article.published),
+        feedPosition,
         coverage: [],
       };
     })
@@ -259,11 +276,12 @@ export function deduplicateArticles(articles) {
   for (const article of sorted) {
     const canonicalUrl = canonicalizeUrl(article.link);
     const normalizedTitle = normalizeTitle(article.title);
+    const titleKey = `${article.language}:${normalizedTitle}`;
     const timestamp = parseTimestamp(article.publishedAt);
     let group = canonicalUrl ? byUrl.get(canonicalUrl) : null;
 
     if (!group && normalizedTitle) {
-      const exactCandidates = byTitle.get(normalizedTitle) ?? [];
+      const exactCandidates = byTitle.get(titleKey) ?? [];
       group = exactCandidates.find((candidate) =>
         datesMayRepresentSameStory(timestamp, parseTimestamp(candidate.publishedAt), MAX_EXACT_TITLE_DUPLICATE_AGE_MS),
       );
@@ -289,6 +307,10 @@ export function deduplicateArticles(articles) {
       title: article.title,
       link: article.link,
       publishedAt: article.publishedAt,
+      description: article.description,
+      tags: article.tags,
+      feedPosition: article.feedPosition,
+      sportGroup: article.sportGroup,
     };
 
     if (group) {
@@ -297,9 +319,9 @@ export function deduplicateArticles(articles) {
       }
       if (canonicalUrl) byUrl.set(canonicalUrl, group);
       if (normalizedTitle) {
-        const exactCandidates = byTitle.get(normalizedTitle) ?? [];
+        const exactCandidates = byTitle.get(titleKey) ?? [];
         if (!exactCandidates.includes(group)) exactCandidates.push(group);
-        byTitle.set(normalizedTitle, exactCandidates);
+        byTitle.set(titleKey, exactCandidates);
       }
       if (compareArticles(article, group) < 0) {
         group.title = article.title;
@@ -310,6 +332,10 @@ export function deduplicateArticles(articles) {
         group.category = article.category;
         group.language = article.language;
         group.publishedAt = article.publishedAt;
+        group.description = article.description;
+        group.tags = article.tags;
+        group.feedPosition = article.feedPosition;
+        group.sportGroup = article.sportGroup;
         group.id = canonicalUrl || article.id;
       }
       continue;
@@ -319,25 +345,67 @@ export function deduplicateArticles(articles) {
     groups.push(group);
     if (canonicalUrl) byUrl.set(canonicalUrl, group);
     if (normalizedTitle) {
-      const exactCandidates = byTitle.get(normalizedTitle) ?? [];
+      const exactCandidates = byTitle.get(titleKey) ?? [];
       exactCandidates.push(group);
-      byTitle.set(normalizedTitle, exactCandidates);
+      byTitle.set(titleKey, exactCandidates);
     }
   }
 
   return groups.sort(compareArticles);
 }
 
-export function selectBriefingArticles(articles, limit = 5) {
+export function articleRelevanceScore(article, currentTime = Date.now()) {
+  const timestamp = parseTimestamp(article.publishedAt);
+  const ageHours = timestamp === null ? Infinity : Math.max(0, currentTime - timestamp) / (60 * 60 * 1000);
+  const recency = Number.isFinite(ageHours) ? 40 * Math.exp(-Math.LN2 * ageHours / 72) : 0;
+  const sourceWeight = {
+    journalism: 10,
+    "official-institution": 8,
+    "official-company": 7,
+    "personal-blog": 5,
+    "community-aggregator": 3,
+  }[article.sourceKind] ?? 2;
+  const feedPosition = Number.isInteger(article.feedPosition)
+    ? Math.max(0, 10 - Math.max(0, article.feedPosition) * 0.6)
+    : 0;
+  const headline = normalizeTitle(article.title);
+  const impact = /\b(election|ceasefire|invasion|resigns|resignation|earthquake|collapse|killed|dies|ban|recall|merger|bankruptcy)\b/.test(headline)
+    ? 18
+    : 0;
+  return recency + sourceWeight + feedPosition + impact;
+}
+
+function compareByRelevance(first, second, currentTime) {
+  const scoreDifference = articleRelevanceScore(second, currentTime) - articleRelevanceScore(first, currentTime);
+  return scoreDifference || compareArticles(first, second);
+}
+
+function compareByRecency(first, second, currentTime) {
+  const dateDifference = (parseTimestamp(second.publishedAt) ?? -Infinity) -
+    (parseTimestamp(first.publishedAt) ?? -Infinity);
+  return dateDifference || compareByRelevance(first, second, currentTime);
+}
+
+function isDuplicateBriefingStory(article, selected) {
+  const timestamp = parseTimestamp(article.publishedAt);
+  const tokens = titleTokens(normalizeTitle(article.title));
+  if (tokens.size < 4) return false;
+  return selected.some((existing) =>
+    isNearTimestamp(timestamp, parseTimestamp(existing.publishedAt), MAX_EXACT_TITLE_DUPLICATE_AGE_MS) &&
+    titleSimilarity(tokens, titleTokens(normalizeTitle(existing.title))) >= 0.65,
+  );
+}
+
+export function selectBriefingArticles(articles, limit = 5, currentTime = Date.now()) {
   const buckets = new Map(NEWS_CATEGORIES.map(({ id }) => [id, []]));
-  for (const article of [...articles].sort(compareArticles)) {
+  for (const article of [...articles].sort((a, b) => compareByRelevance(a, b, currentTime))) {
     const bucket = buckets.get(article.category);
     if (bucket) bucket.push(article);
   }
 
   const orderedCategories = NEWS_CATEGORIES
     .filter(({ id }) => buckets.get(id).length > 0)
-    .sort((a, b) => compareArticles(buckets.get(a.id)[0], buckets.get(b.id)[0]));
+    .sort((a, b) => compareByRelevance(buckets.get(a.id)[0], buckets.get(b.id)[0], currentTime));
   const counts = new Map(NEWS_CATEGORIES.map(({ id }) => [id, 0]));
   const selected = [];
   const maxPerCategory = Math.max(1, Math.ceil(limit / Math.max(1, orderedCategories.length)));
@@ -345,10 +413,14 @@ export function selectBriefingArticles(articles, limit = 5) {
   while (selected.length < limit) {
     let added = false;
     for (const category of orderedCategories) {
-      const count = counts.get(category.id);
-      if (count >= maxPerCategory) continue;
-      const article = buckets.get(category.id)[count];
-      if (!article) continue;
+      let count = counts.get(category.id);
+      const bucket = buckets.get(category.id);
+      while (count < bucket.length && isDuplicateBriefingStory(bucket[count], selected)) count += 1;
+      if (count >= maxPerCategory || count >= bucket.length) {
+        counts.set(category.id, count);
+        continue;
+      }
+      const article = bucket[count];
       selected.push(article);
       counts.set(category.id, count + 1);
       added = true;
@@ -415,11 +487,12 @@ export function createNewsService({
     return request;
   }
 
-  async function query({ view, category, sourceId, since = "7d", limit } = {}) {
+  async function query({ view, category, sourceId, since = "7d", sort = "relevant", limit } = {}) {
     const isBriefing = view === "briefing";
     if (view && !isBriefing) throw apiError("Unknown news view.", 400);
     if (!isBriefing && !categoriesById.has(category)) throw apiError("Unknown news category.", 400);
     if (!["24h", "7d", "30d", "all"].includes(since)) throw apiError("Unknown recency filter.", 400);
+    if (!["relevant", "recent"].includes(sort)) throw apiError("Unknown news sort order.", 400);
 
     const selectedSources = activeSources.filter((source) =>
       isBriefing ? true : source.category === category,
@@ -436,7 +509,25 @@ export function createNewsService({
     const feedResults = await Promise.all(selectedSources.map((source) => loadSource(source.id)));
     const warnings = feedResults.flatMap((result) => result.warnings);
     const rawArticles = feedResults.flatMap((result) => result.articles);
-    let articles = deduplicateArticles(rawArticles);
+    const unknownBelgianLanguages = rawArticles.filter((article) =>
+      article.category === "belgium" && normalizeLanguage(article.language) === "unknown",
+    );
+    if (unknownBelgianLanguages.length) {
+      for (const sourceId of new Set(unknownBelgianLanguages.map((article) => article.sourceId))) {
+        const source = sourcesById.get(sourceId);
+        warnings.push({
+          sourceId,
+          source: source?.name ?? sourceId,
+          message: "Stories with unknown language metadata were excluded from Belgium; only Dutch and English are shown.",
+          stale: false,
+          fetchedAt: feedResults.find((result) => result.source.id === sourceId)?.fetchedAt ?? null,
+        });
+      }
+    }
+    const eligibleArticles = rawArticles.filter((article) =>
+      article.category !== "belgium" || ["nl", "en"].includes(normalizeLanguage(article.language)),
+    );
+    let articles = deduplicateArticles(eligibleArticles);
 
     if (since !== "all") {
       const duration = since === "24h" ? 24 * 60 * 60 * 1000 : since === "7d" ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
@@ -454,9 +545,14 @@ export function createNewsService({
         .map((article) => useSourceVariant(article, sourceId));
     }
 
+    const currentTime = now();
     const allMatchingArticles = isBriefing
-      ? selectBriefingArticles(articles, Math.max(articleLimit, 5))
-      : articles;
+      ? selectBriefingArticles(articles, Math.max(articleLimit, 5), currentTime)
+      : [...articles].sort((a, b) =>
+        sort === "recent"
+          ? compareByRecency(a, b, currentTime)
+          : compareByRelevance(a, b, currentTime),
+      );
     const visibleArticles = allMatchingArticles.slice(0, articleLimit);
     const responseSources = selectedSources.map(publicSource);
     const feedStatus = feedResults.map((result) => ({
@@ -564,6 +660,31 @@ function readText(value) {
   if (typeof value["#cdata"] === "string") parts.push(value["#cdata"]);
   if (typeof value.name === "string") parts.push(decodeXmlEntities(value.name));
   return parts.join(" ");
+}
+
+function readFeedTags(entry) {
+  const rawTags = entry.nstag ?? entry.category ?? [];
+  return toArray(rawTags)
+    .flatMap((value) => {
+      if (typeof value === "string") return value.split(/[|,]/);
+      if (!value || typeof value !== "object") return [];
+      const text = value["@_term"] ?? readText(value);
+      return typeof text === "string" ? text.split(/[|,]/) : [];
+    })
+    .map(normalizeText)
+    .filter(Boolean);
+}
+
+function normalizeLanguage(value) {
+  const language = normalizeText(value).toLowerCase().split(/[-_]/)[0];
+  return /^[a-z]{2,3}$/.test(language) ? language : "unknown";
+}
+
+function stripMarkup(value) {
+  return decodeXmlEntities(normalizeText(value))
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function readLink(value) {

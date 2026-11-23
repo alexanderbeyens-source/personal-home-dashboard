@@ -27,6 +27,10 @@ export interface NewsArticle {
   category: string;
   language: string;
   publishedAt: string | null;
+  description?: string;
+  tags?: string[];
+  feedPosition?: number;
+  sportGroup?: "jupiler-pro-league" | "red-devils";
   coverage: {
     sourceId: string;
     source: string;
@@ -36,6 +40,10 @@ export interface NewsArticle {
     title: string;
     link: string;
     publishedAt: string | null;
+    description?: string;
+    tags?: string[];
+    feedPosition?: number;
+    sportGroup?: NewsArticle["sportGroup"];
   }[];
 }
 
@@ -118,6 +126,129 @@ export interface FinanceData {
   base: string;
   date: string;
   rates: Record<string, number>;
+}
+
+export interface EconomicMetric {
+  value: number;
+  unit: string;
+  period: string;
+  previousValue: number | null;
+  change: number | null;
+  history: { period: string; value: number }[];
+  frequency: string;
+  source: string;
+  sourceUrl: string;
+  sourceUpdatedAt?: string;
+  observationStale?: boolean;
+  stale: boolean;
+  fetchedAt: string | null;
+  disclaimer?: string;
+  consumptionBand?: string;
+}
+
+export interface EconomicPolicyRate {
+  id: string;
+  label: string;
+  value: number;
+  unit: string;
+  period: string;
+  lastChangeDate: string | null;
+  history: { period: string; value: number }[];
+  frequency: string;
+  source: string;
+  sourceUrl: string;
+  observationStale?: boolean;
+  stale: boolean;
+  fetchedAt: string | null;
+}
+
+export interface EconomicSnapshot {
+  value: number;
+  unit: string;
+  period: string;
+  frequency: string;
+  source: string;
+  sourceUrl: string;
+  priceType: string;
+  observationStale: boolean;
+  stale: boolean;
+  fetchedAt: string | null;
+}
+
+export interface EconomicData {
+  generatedAt: string;
+  policyRates: {
+    rates: EconomicPolicyRate[];
+    source: string;
+    sourceUrl: string;
+  } | null;
+  worldGrowth: EconomicMetric | null;
+  belgiumInflation: EconomicMetric | null;
+  euroAreaInflation: EconomicMetric | null;
+  mortgageRates: EconomicMetric | null;
+  electricityPrices: EconomicMetric | null;
+  gasPrices: EconomicMetric | null;
+  imiePrice: EconomicSnapshot | null;
+  warnings: { source: string; message: string; stale: boolean }[];
+}
+
+export interface BriefingStory {
+  id: string;
+  title: string;
+  summary: string | null;
+  whySelected: string | null;
+  source: string;
+  sourceKind: NewsArticle["sourceKind"];
+  category: string;
+  language: string;
+  publishedAt: string | null;
+  link: string;
+  coverage: { source: string; link: string }[];
+  sportGroup: NewsArticle["sportGroup"] | null;
+}
+
+export interface BriefingMatch extends ScoreEvent {
+  link: string;
+  label: "Live score" | "Result" | "Scheduled";
+  source: "ESPN";
+}
+
+export interface DailyBriefing {
+  generatedAt: string;
+  stale: boolean;
+  topStories: BriefingStory[];
+  sections: {
+    belgiumInternational: BriefingStory[];
+    technology: BriefingStory[];
+  };
+  economy: {
+    stories: BriefingStory[];
+    referenceRates: FinanceData | null;
+    referenceLabel: string;
+    indicatorDevelopments: {
+      id: string;
+      title: string;
+      summary: string;
+      source: string;
+      sourceUrl: string;
+      period: string;
+    }[];
+  };
+  sports: {
+    nba: {
+      matches: BriefingMatch[];
+      featuredPlayers: { name: string; team: string; url: string }[];
+      headlines: BriefingStory[];
+    };
+    premierLeague: { matches: BriefingMatch[]; headlines: BriefingStory[] };
+    belgianFootball: BriefingStory[];
+  };
+  today: {
+    agendaStatus: "not-configured" | "available" | "unavailable";
+    agendaEvents: CalendarEvent[];
+    weather: WeatherData | null;
+  };
+  warnings: { source: string; message: string; stale: boolean }[];
 }
 
 export interface Project {

@@ -48,7 +48,14 @@ describe("protected API routes", () => {
     }
     expect(ready).toBe(true);
 
-    for (const route of ["/api/weather", "/api/sports/nba/players", "/api/news?view=briefing"]) {
+    for (const route of [
+      "/api/weather",
+      "/api/economy",
+      "/api/briefing",
+      "/api/sports/nba/players",
+      "/api/sports/belgian-football",
+      "/api/news?view=briefing",
+    ]) {
       const response = await fetch(`${baseUrl}${route}`);
       expect(response.status).toBe(401);
       expect(await response.json()).toEqual({ error: "Sign-in required." });

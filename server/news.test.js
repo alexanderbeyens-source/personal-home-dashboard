@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   NEWS_CATEGORIES,
+  NEWS_SOURCES,
   canonicalizeUrl,
   createNewsService,
   deduplicateArticles,
   normalizeEspnNews,
   parseFeedXml,
+  articleRelevanceScore,
   selectBriefingArticles,
 } from "./news.js";
 
@@ -41,6 +43,19 @@ function makeService({ sources = [source], fetchXml, now, ttlMs, retryMs } = {})
 }
 
 describe("news feed parsing", () => {
+  it("uses five categories and keeps software sources in Technology & AI", () => {
+    expect(NEWS_CATEGORIES.map(({ id }) => id)).toEqual([
+      "belgium",
+      "international",
+      "technology-ai",
+      "economy-business",
+      "sport",
+    ]);
+    expect(NEWS_SOURCES.find(({ id }) => id === "simon-willison").category).toBe("technology-ai");
+    expect(NEWS_SOURCES.find(({ id }) => id === "github-changelog").category).toBe("technology-ai");
+    expect(NEWS_SOURCES.some(({ category }) => category === "data-software")).toBe(false);
+  });
+
   it("parses RSS text, entities, dates, and valid original links", () => {
     const xml = rssFeed([
       rssItem({
@@ -76,6 +91,42 @@ describe("news feed parsing", () => {
         title: "Atom headline",
         link: "https://example.com/story/4",
         publishedAt: "2026-11-23T11:30:00.000Z",
+      },
+    ]);
+  });
+
+  it("uses declared languages and keeps only configured Sporza football tags", () => {
+    const sporza = {
+      ...source,
+      id: "sporza",
+      name: "Sporza",
+      category: "sport",
+      language: "nl",
+      includeTags: ["Jupiler Pro League", "Rode Duivels"],
+    };
+    const atom = `<feed xmlns="http://www.w3.org/2005/Atom" xmlns:vrtns="http://base.vrt.be" xml:lang="nl">
+      <entry><title>JPL match report</title><link rel="alternate" href="https://sporza.example/jpl" />
+        <published>2026-11-23T10:00:00Z</published><summary>A readable match description</summary>
+        <vrtns:nstag>voetbal|Jupiler Pro League|Anderlecht</vrtns:nstag></entry>
+      <entry><title>Red Devils squad update</title><link rel="alternate" href="https://sporza.example/reds" />
+        <published>2026-11-23T10:30:00Z</published><vrtns:nstag>voetbal|Rode Duivels|België</vrtns:nstag></entry>
+      <entry><title>General cycling story</title><link rel="alternate" href="https://sporza.example/cycling" />
+        <published>2026-11-23T11:00:00Z</published><vrtns:nstag>wielrennen|Cycling</vrtns:nstag></entry>
+    </feed>`;
+
+    expect(parseFeedXml(atom, sporza)).toMatchObject([
+      {
+        title: "JPL match report",
+        source: "Sporza",
+        language: "nl",
+        description: "A readable match description",
+        sportGroup: "jupiler-pro-league",
+        tags: ["voetbal", "Jupiler Pro League", "Anderlecht"],
+      },
+      {
+        title: "Red Devils squad update",
+        sportGroup: "red-devils",
+        tags: ["voetbal", "Rode Duivels", "België"],
       },
     ]);
   });
@@ -233,25 +284,45 @@ describe("news service caching, isolation, and filters", () => {
     expect(response.feedStatus).toHaveLength(2);
   });
 
-  it("excludes disabled sources from category and briefing results", async () => {
+  it("keeps VRT disabled and RTBF absent from active news sources", async () => {
     const disabledVrt = { ...source, id: "vrt-nws", name: "VRT NWS", enabled: false };
-    const activeRtbf = { ...source, id: "rtbf-belgique", name: "RTBF Belgique" };
     const fetchXml = vi.fn(async (itemSource) => rssFeed([
       rssItem({
         title: `${itemSource.name} headline`,
         link: `https://${itemSource.id}.example/story`,
       }),
     ]));
-    const service = makeService({ sources: [disabledVrt, activeRtbf], fetchXml });
+    const service = makeService({ sources: [disabledVrt], fetchXml });
 
     const categoryResponse = await service.query({ category: "belgium", since: "all" });
     const briefingResponse = await service.query({ view: "briefing", since: "all" });
 
-    expect(categoryResponse.articles.map(({ source }) => source)).toEqual(["RTBF Belgique"]);
-    expect(briefingResponse.articles.map(({ source }) => source)).toEqual(["RTBF Belgique"]);
-    expect(categoryResponse.sources.map(({ id }) => id)).toEqual(["rtbf-belgique"]);
-    expect(fetchXml.mock.calls.flatMap(([requestedSource]) => requestedSource.id))
-      .not.toContain("vrt-nws");
+    expect(NEWS_SOURCES.some(({ id }) => id === "rtbf-belgique")).toBe(false);
+    expect(NEWS_SOURCES.find(({ id }) => id === "vrt-nws")).toMatchObject({ enabled: false });
+    expect(categoryResponse.articles).toEqual([]);
+    expect(briefingResponse.articles).toEqual([]);
+    expect(categoryResponse.sources).toEqual([]);
+    expect(fetchXml).not.toHaveBeenCalled();
+  });
+
+  it("excludes French Belgian stories and reports when language metadata is unknown", async () => {
+    const sources = [
+      { ...source, id: "french", name: "French feed", language: "en" },
+      { ...source, id: "unknown", name: "Unspecified feed", language: undefined },
+    ];
+    const service = makeService({
+      sources,
+      fetchXml: async (itemSource) => itemSource.id === "french"
+        ? `<rss><channel><language>fr-FR</language>${rssItem({ link: "https://example.com/fr" })}</channel></rss>`
+        : rssFeed([rssItem({ link: "https://example.com/unknown" })]),
+    });
+
+    const response = await service.query({ category: "belgium", since: "all" });
+
+    expect(response.articles).toEqual([]);
+    expect(response.warnings).toMatchObject([
+      { sourceId: "unknown", message: expect.stringContaining("unknown language metadata") },
+    ]);
   });
 
   it("surfaces timeout and HTTP failures as isolated source warnings", async () => {
@@ -292,10 +363,10 @@ describe("news service caching, isolation, and filters", () => {
   it("filters by category, source, and recency, and enforces response limits", async () => {
     const secondSource = {
       ...source,
-      id: "rtbf",
-      name: "RTBF Belgique",
-      language: "fr",
-      url: "https://rtbf.example/feed.xml",
+      id: "bbc-alt",
+      name: "Second source",
+      language: "en",
+      url: "https://second.example/feed.xml",
     };
     const service = makeService({
       sources: [source, secondSource],
@@ -315,15 +386,41 @@ describe("news service caching, isolation, and filters", () => {
     });
 
     const response = await service.query({ category: "belgium", since: "24h", limit: 1 });
-    const fromSource = await service.query({ category: "belgium", sourceId: "rtbf", since: "all" });
+    const fromSource = await service.query({ category: "belgium", sourceId: "bbc-alt", since: "all", sort: "recent" });
     await expect(service.query({ category: "unknown" })).rejects.toMatchObject({ status: 400 });
     await expect(service.query({ category: "belgium", limit: 21 })).rejects.toMatchObject({ status: 400 });
 
     expect(response.articles).toHaveLength(1);
     expect(response.availableCount).toBe(2);
     expect(response.hasMore).toBe(true);
-    expect(fromSource.articles.every((article) => article.sourceId === "rtbf")).toBe(true);
+    expect(fromSource.articles.every((article) => article.sourceId === "bbc-alt")).toBe(true);
+    expect(fromSource.articles[0].link).toBe("https://bbc-alt.example/recent");
     expect(fromSource.sources.every((item) => !("url" in item))).toBe(true);
+  });
+
+  it("sorts by relevance by default and supports chronological recency", async () => {
+    const service = makeService({
+      fetchXml: async () => rssFeed([
+        rssItem({
+          title: "A routine local update",
+          link: "https://example.com/recent",
+          date: "Mon, 23 Nov 2026 11:00:00 GMT",
+        }),
+        rssItem({
+          title: "Ceasefire agreement reached after negotiations",
+          link: "https://example.com/important",
+          date: "Sat, 21 Nov 2026 12:00:00 GMT",
+        }),
+      ]),
+      now: () => Date.parse("2026-11-23T12:00:00.000Z"),
+    });
+
+    const relevant = await service.query({ category: "belgium", since: "all" });
+    const recent = await service.query({ category: "belgium", since: "all", sort: "recent" });
+
+    expect(relevant.articles[0].title).toBe("Ceasefire agreement reached after negotiations");
+    expect(recent.articles[0].title).toBe("A routine local update");
+    await expect(service.query({ category: "belgium", sort: "other" })).rejects.toMatchObject({ status: 400 });
   });
 
   it("defaults category views to five stories and supports a bounded larger view", async () => {
@@ -360,5 +457,19 @@ describe("news service caching, isolation, and filters", () => {
     const selected = selectBriefingArticles(articles, 5);
     expect(selected).toHaveLength(5);
     expect(new Set(selected.map((item) => item.category)).size).toBe(5);
+  });
+
+  it("does not select a duplicate headline twice for the briefing", () => {
+    const sharedTitle = "Central bank announces emergency interest rate reduction";
+    const selected = selectBriefingArticles([
+      { id: "be", title: sharedTitle, category: "belgium", sourceKind: "journalism", sourceId: "one", publishedAt: "2026-11-23T10:00:00.000Z" },
+      { id: "intl", title: sharedTitle, category: "international", sourceKind: "journalism", sourceId: "two", publishedAt: "2026-11-23T10:30:00.000Z" },
+      { id: "intl-alt", title: "Central bank governor explains policy outlook", category: "international", sourceKind: "journalism", sourceId: "two", publishedAt: "2026-11-23T09:30:00.000Z" },
+      { id: "tech", title: "New technology research published today", category: "technology-ai", sourceKind: "journalism", sourceId: "three", publishedAt: "2026-11-23T10:00:00.000Z" },
+    ], 4, Date.parse("2026-11-23T12:00:00.000Z"));
+
+    expect(selected.filter(({ title }) => title === sharedTitle)).toHaveLength(1);
+    expect(selected.some(({ id }) => id === "intl-alt")).toBe(true);
+    expect(articleRelevanceScore(selected[0], Date.parse("2026-11-23T12:00:00.000Z"))).toBeGreaterThan(0);
   });
 });
