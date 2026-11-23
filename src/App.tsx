@@ -6,16 +6,20 @@ import type {
   CalendarData,
   FinanceData,
   HomeData,
-  NewsArticle,
+  LiveResource,
+  NewsResponse,
   Project,
   SportsData,
   WeatherData,
 } from "./types";
 
-const categories = [
-  { id: "world", label: "World" },
-  { id: "technology", label: "Tech & AI" },
-  { id: "business", label: "Economy" },
+const newsCategories = [
+  { id: "belgium", label: "Belgium" },
+  { id: "international", label: "International" },
+  { id: "technology-ai", label: "Technology & AI" },
+  { id: "economy-business", label: "Economy & business" },
+  { id: "data-software", label: "Data & software" },
+  { id: "sport", label: "Sport" },
 ] as const;
 
 interface AuthUser {
@@ -53,58 +57,236 @@ function formatTime(date: string) {
   return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(date));
 }
 
-function formatRelativeTime(date: string | null) {
-  if (!date) return "Recently";
+function formatPublishedDate(date: string | null) {
+  if (!date) return "Date unavailable";
   const parsed = new Date(date);
-  if (Number.isNaN(parsed.getTime())) return "Recently";
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(parsed);
+  if (Number.isNaN(parsed.getTime())) return "Date unavailable";
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
+function formatEventTimestamp(date: string) {
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return "Time unavailable";
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(parsed);
 }
 
 function NewsPanel() {
-  const [active, setActive] = useState<(typeof categories)[number]["id"]>("world");
-  const world = useLiveResource<NewsArticle[]>("/api/news?category=world");
-  const technology = useLiveResource<NewsArticle[]>("/api/news?category=technology");
-  const business = useLiveResource<NewsArticle[]>("/api/news?category=business");
-  const current = { world, technology, business }[active];
-  const items = current.data ?? [];
+  const resource = useLiveResource<NewsResponse>("/api/news?view=briefing&since=7d");
+  const articles = resource.data?.articles ?? [];
 
   return (
-    <Panel title="The briefing" eyebrow="LIVE DESK · NEWS" icon="news" className="news-panel">
-      <div className="tab-row" role="tablist" aria-label="News category">
-        {categories.map((category) => (
-          <button
-            key={category.id}
-            className={`tab-button ${active === category.id ? "is-active" : ""}`}
-            onClick={() => setActive(category.id)}
-            role="tab"
-            aria-selected={active === category.id}
-          >
-            {category.label}
-          </button>
-        ))}
-      </div>
-      {items.length > 0 ? (
+    <Panel title="The briefing" eyebrow="LIVE DESK · NEWS" icon="news" className="news-panel" resource={resource}>
+      <NewsWarnings warnings={resource.data?.warnings ?? []} compact />
+      {articles.length > 0 ? (
         <div className="news-list">
-          {items.slice(0, 5).map((article, index) => (
+          {articles.slice(0, 5).map((article, index) => (
             <a className="news-item" href={article.link} target="_blank" rel="noreferrer" key={`${article.link}-${index}`}>
               <span className="news-index">{String(index + 1).padStart(2, "0")}</span>
               <span className="news-copy">
                 <span className="news-title">{article.title}</span>
-                <span className="news-meta">{article.source} <i /> {formatRelativeTime(article.publishedAt)}</span>
+                <span className="news-meta">{article.source} <i /> {getNewsCategoryLabel(article.category)} <i /> {formatPublishedDate(article.publishedAt)}</span>
               </span>
               <Icon name="arrow" size={15} className="news-arrow" />
             </a>
           ))}
         </div>
       ) : (
-        <ResourceState loading={current.loading} error={current.error} empty="No current stories in this feed." />
+        <ResourceState loading={resource.loading} empty="No recent stories are available." />
       )}
-      <p className="panel-footnote">Live headlines · refreshed every 5 minutes</p>
+      <a className="news-center-link" href="/news">Open the news center <Icon name="arrow" size={13} /></a>
+      <p className="panel-footnote">Up to five stories across six categories · original sources linked</p>
     </Panel>
   );
 }
 
+function getNewsCategoryLabel(categoryId: string) {
+  return newsCategories.find((category) => category.id === categoryId)?.label ?? categoryId;
+}
+
+function getSourceKindLabel(kind: string) {
+  const labels: Record<string, string> = {
+    journalism: "Independent journalism",
+    "official-company": "Official company update",
+    "official-institution": "Official institution update",
+    "personal-blog": "Personal blog",
+    "community-aggregator": "Community / aggregator",
+  };
+  return labels[kind] ?? "Source type unavailable";
+}
+
+function NewsWarnings({ warnings, compact = false }: { warnings: NewsResponse["warnings"]; compact?: boolean }) {
+  if (!warnings.length) return null;
+  const visibleWarnings = compact ? warnings.slice(0, 2) : warnings;
+  return (
+    <div className={`news-warnings${compact ? " is-compact" : ""}`} role="status">
+      {visibleWarnings.map((warning) => (
+        <p key={`${warning.sourceId}-${warning.message}`}>
+          <strong>{warning.source}:</strong> {warning.message}
+          {warning.stale && warning.fetchedAt && ` Last successful update ${formatPublishedDate(warning.fetchedAt)}.`}
+          {warning.latestPublishedAt && ` Newest published item: ${formatPublishedDate(warning.latestPublishedAt)}.`}
+        </p>
+      ))}
+      {warnings.length > visibleWarnings.length && <p>{warnings.length - visibleWarnings.length} more source notices.</p>}
+    </div>
+  );
+}
+
+function NewsCenter({
+  user,
+  csrfToken,
+  signOutError,
+  onSignOut,
+}: {
+  user: AuthUser;
+  csrfToken: string;
+  signOutError: string | null;
+  onSignOut: (csrfToken: string) => void;
+}) {
+  const [category, setCategory] = useState<(typeof newsCategories)[number]["id"]>("belgium");
+  const [sourceId, setSourceId] = useState("all");
+  const [since, setSince] = useState("7d");
+  const [limit, setLimit] = useState(5);
+  const sourceQuery = sourceId === "all" ? "" : `&source=${encodeURIComponent(sourceId)}`;
+  const resource = useLiveResource<NewsResponse>(
+    `/api/news?category=${category}&since=${since}&limit=${limit}${sourceQuery}`,
+  );
+  const articles = resource.data?.articles ?? [];
+  const availableSources = resource.data?.sources ?? [];
+
+  return (
+    <main className="app-shell news-center-shell">
+      <header className="topbar">
+        <a className="brand" href="/" aria-label="Northstar home">
+          <span className="brand-mark"><span /></span>
+          <span className="brand-copy"><strong>northstar</strong><small>PERSONAL COMMAND CENTER</small></span>
+        </a>
+        <div className="topbar-right">
+          <a className="news-home-link" href="/">Dashboard</a>
+          <span className="account-name">{user.name || "Signed in"}</span>
+          <button className="sign-out-button" onClick={() => onSignOut(csrfToken)}>Sign out</button>
+        </div>
+      </header>
+      {signOutError && <p className="auth-inline-error">{signOutError}</p>}
+
+      <section className="news-center-intro">
+        <p className="eyebrow">NORTHSTAR · NEWS DESK</p>
+        <h1>News center<span>.</span></h1>
+        <p>Reliable headlines across Belgium, the world, technology, business, software and sport.</p>
+      </section>
+
+      <Panel title="Latest stories" eyebrow={getNewsCategoryLabel(category).toUpperCase()} icon="news" className="news-center-panel" resource={resource}>
+        <div className="news-category-grid" role="group" aria-label="News category">
+          {newsCategories.map((item) => (
+            <button
+              key={item.id}
+              className={`news-category-button${category === item.id ? " is-active" : ""}`}
+              type="button"
+              aria-pressed={category === item.id}
+              onClick={() => {
+                setLimit(5);
+                setSourceId("all");
+                setCategory(item.id);
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="news-filters">
+          <label>
+            <span>Source</span>
+            <select value={sourceId} onChange={(event) => {
+              setLimit(5);
+              setSourceId(event.target.value);
+            }}>
+              <option value="all">All sources</option>
+              {availableSources.map((source) => (
+                <option key={source.id} value={source.id}>{source.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Published</span>
+            <select value={since} onChange={(event) => {
+              setLimit(5);
+              setSince(event.target.value);
+            }}>
+              <option value="24h">Past 24 hours</option>
+              <option value="7d">Past 7 days</option>
+              <option value="30d">Past 30 days</option>
+              <option value="all">Any date</option>
+            </select>
+          </label>
+        </div>
+        <NewsWarnings warnings={resource.data?.warnings ?? []} />
+        {articles.length ? (
+          <div className="news-center-list">
+            {articles.map((article, index) => (
+              <article className="news-center-article" key={article.id || `${article.link}-${index}`}>
+                <div className="news-center-article-topline">
+                  <span>{getSourceKindLabel(article.sourceKind)}</span>
+                  <span>{article.language.toUpperCase()}</span>
+                </div>
+                <a className="news-center-title" href={article.link} target="_blank" rel="noopener noreferrer">
+                  {article.title}<Icon name="arrow" size={14} />
+                </a>
+                <div className="news-center-meta">
+                  <span>{article.source}</span>
+                  <span>{formatPublishedDate(article.publishedAt)}</span>
+                </div>
+                {article.coverage.length > 1 && (
+                  <details className="news-coverage">
+                    <summary>Also covered by {article.coverage.length - 1} other {article.coverage.length === 2 ? "source" : "sources"}</summary>
+                    <ul>
+                      {article.coverage
+                        .filter((variant) => variant.sourceId !== article.sourceId || variant.link !== article.link)
+                        .map((variant) => (
+                          <li key={`${variant.sourceId}-${variant.link}`}>
+                            <a href={variant.link} target="_blank" rel="noopener noreferrer">{variant.source}</a>
+                          </li>
+                        ))}
+                    </ul>
+                  </details>
+                )}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <ResourceState loading={resource.loading} empty="No stories match these filters." />
+        )}
+        {resource.data?.hasMore && limit < 20 && (
+          <button className="news-more-button" type="button" onClick={() => setLimit((current) => Math.min(20, current + 5))}>
+            Show more stories
+          </button>
+        )}
+        {resource.data?.hasMore && limit >= 20 && <p className="panel-footnote">Showing the maximum of 20 stories for this view.</p>}
+        <p className="panel-footnote">Original headlines are shown in their published language. Links open at the source.</p>
+      </Panel>
+    </main>
+  );
+}
+
 function ScoreRow({ event }: { event: SportsData["events"][number] }) {
+  const isLive = event.state === "in";
+  const status = isLive
+    ? event.shortStatus || "In progress"
+    : event.state === "pre"
+      ? "Upcoming"
+      : event.shortStatus;
+
   return (
     <div className="score-row">
       <div className="score-teams">
@@ -116,8 +298,9 @@ function ScoreRow({ event }: { event: SportsData["events"][number] }) {
           </div>
         ))}
       </div>
-      <span className={`event-status ${event.status.toLowerCase().includes("progress") ? "is-live" : ""}`}>
-        {event.shortStatus}
+      <span className={`event-status${isLive ? " is-live" : ""}`}>
+        <span>{isLive ? `LIVE · ${status}` : status}</span>
+        <small>{formatEventTimestamp(event.date)}</small>
       </span>
     </div>
   );
@@ -125,20 +308,48 @@ function ScoreRow({ event }: { event: SportsData["events"][number] }) {
 
 function SportsPanel() {
   const nba = useLiveResource<SportsData>("/api/sports/nba");
+  const nbaPlayers = useLiveResource<Pick<SportsData, "featuredPlayers" | "warnings">>("/api/sports/nba/players");
   const premierLeague = useLiveResource<SportsData>("/api/sports/premier-league");
   const nbaEvents = nba.data?.events ?? [];
   const priorityNbaEvents = [...nbaEvents].sort((a, b) => {
+    const statePriority = (state: typeof a.state) => state === "in" ? 0 : state === "pre" ? 1 : state === "post" ? 2 : 3;
+    const stateDifference = statePriority(a.state) - statePriority(b.state);
+    if (stateDifference) return stateDifference;
     const aLakers = a.competitors.some((team) => team.abbreviation === "LAL");
     const bLakers = b.competitors.some((team) => team.abbreviation === "LAL");
-    return Number(bLakers) - Number(aLakers);
+    if (aLakers !== bLakers) return Number(bLakers) - Number(aLakers);
+    const aDate = new Date(a.date).getTime();
+    const bDate = new Date(b.date).getTime();
+    if (!Number.isFinite(aDate) || !Number.isFinite(bDate)) return 0;
+    return a.state === "post" ? bDate - aDate : aDate - bDate;
   });
   const relevantNbaNews = (nba.data?.news ?? []).filter((item) =>
     /lakers|camara|mitchell|trail blazers/i.test(item.title),
   );
-  const featuredPlayers = nba.data?.featuredPlayers ?? [];
+  const featuredPlayers = nbaPlayers.data?.featuredPlayers ?? [];
+  const sportsResources = [nba, nbaPlayers, premierLeague];
+  const hasSportsData = sportsResources.some((resource) => resource.data !== null);
+  const sportsResource: LiveResource<unknown> = {
+    data: hasSportsData
+      ? { nba: nba.data, nbaPlayers: nbaPlayers.data, premierLeague: premierLeague.data }
+      : null,
+    loading: !hasSportsData && sportsResources.some((resource) => resource.loading),
+    refreshing: hasSportsData && sportsResources.some((resource) => resource.loading || resource.refreshing),
+    error: [
+      nba.error && `NBA: ${nba.error}`,
+      nbaPlayers.error && `NBA player information: ${nbaPlayers.error}`,
+      premierLeague.error && `Premier League: ${premierLeague.error}`,
+    ].filter(Boolean).join(" · ") || null,
+    updatedAt: sportsResources.map((resource) => resource.updatedAt)
+      .filter((date): date is Date => date !== null)
+      .sort((a, b) => a.getTime() - b.getTime())[0] ?? null,
+    refresh: async () => {
+      await Promise.all(sportsResources.map((resource) => resource.refresh()));
+    },
+  };
 
   return (
-    <Panel title="Courtside & pitchside" eyebrow="LIVE DESK · SPORTS" icon="ball" className="sports-panel">
+    <Panel title="Courtside & pitchside" eyebrow="LIVE DESK · SPORTS" icon="ball" className="sports-panel" resource={sportsResource}>
       <div className="sports-section">
         <div className="subsection-title"><span className="sport-indicator nba" />NBA <span className="subsection-note">Lakers & Belgian players</span></div>
         {nbaEvents.length ? (
@@ -146,7 +357,7 @@ function SportsPanel() {
             {priorityNbaEvents.slice(0, 3).map((event) => <ScoreRow event={event} key={event.id} />)}
           </div>
         ) : (
-          <ResourceState loading={nba.loading} error={nba.error} empty="No NBA games scheduled right now." />
+          <ResourceState loading={nba.loading} empty="No NBA games scheduled right now." />
         )}
         <div className="player-links">
           <a href="https://www.espn.com/nba/team/_/name/lal/los-angeles-lakers" target="_blank" rel="noreferrer" className="player-chip"><b>LAL</b> Los Angeles Lakers <Icon name="arrow" size={12} /></a>
@@ -161,6 +372,9 @@ function SportsPanel() {
             <span>NBA STORY</span>{relevantNbaNews[0].title}<Icon name="arrow" size={14} />
           </a>
         )}
+        {[...(nba.data?.warnings ?? []), ...(nbaPlayers.data?.warnings ?? [])].map((warning) => (
+          <p className="widget-warning" key={warning}>{warning}</p>
+        ))}
       </div>
       <div className="sports-section premier-section">
         <div className="subsection-title"><span className="sport-indicator premier" />Premier League <a href="https://www.premierleague.com/tables" target="_blank" rel="noreferrer">Live table <Icon name="arrow" size={12} /></a></div>
@@ -169,7 +383,7 @@ function SportsPanel() {
             {premierLeague.data!.events.slice(0, 3).map((event) => <ScoreRow event={event} key={event.id} />)}
           </div>
         ) : (
-          <ResourceState loading={premierLeague.loading} error={premierLeague.error} empty="No Premier League matches scheduled right now." />
+          <ResourceState loading={premierLeague.loading} empty="No Premier League matches scheduled right now." />
         )}
         {premierLeague.data?.news[0] ? (
           <a className="sports-headline premier-headline" href={premierLeague.data.news[0].link} target="_blank" rel="noreferrer">
@@ -238,7 +452,7 @@ function Dashboard({
       </section>
 
       <section className="dashboard-grid" aria-label="Dashboard modules">
-        <Panel title="Today, in focus" eyebrow="DAILY OVERVIEW" icon="sun" className="overview-panel">
+        <Panel title="Today, in focus" eyebrow="DAILY OVERVIEW" icon="sun" className="overview-panel" resource={weather}>
           <div className="overview-content">
             <div className="weather-card">
               <div className="weather-main">
@@ -250,7 +464,7 @@ function Dashboard({
                       <span className="weather-condition">{weatherLabel(weather.data.weatherCode, weather.data.isDay)}</span>
                     </>
                   ) : (
-                    <span className="weather-condition">{weather.loading ? "Getting the forecast…" : weather.error ?? "Weather unavailable"}</span>
+                    <span className="weather-condition">{weather.loading ? "Getting the forecast…" : "Weather unavailable"}</span>
                   )}
                   <span className="weather-location">{weather.data?.location ?? "Weather"}</span>
                 </div>
@@ -261,7 +475,6 @@ function Dashboard({
                   <div><Icon name="drop" size={14} /><span>{weather.data.humidity}<small>% humidity</small></span></div>
                 </div>
               )}
-              {weather.error && !weather.loading && <button className="text-button" onClick={() => window.location.reload()}>Retry</button>}
               <span className="weather-glow" />
             </div>
             <div className="overview-note">
@@ -272,7 +485,7 @@ function Dashboard({
           </div>
         </Panel>
 
-        <Panel title="Up next" eyebrow="YOUR AGENDA" icon="calendar" className="agenda-panel">
+        <Panel title="Up next" eyebrow="YOUR AGENDA" icon="calendar" className="agenda-panel" resource={agenda}>
           {agendaEvents.length ? (
             <div className="agenda-list">
               {agendaEvents.slice(0, 4).map((event, index) => (
@@ -284,7 +497,7 @@ function Dashboard({
               ))}
             </div>
           ) : (
-            <ResourceState loading={agenda.loading} error={agenda.error} empty="Connect a calendar to see what's coming up." />
+            <ResourceState loading={agenda.loading} empty="Connect a calendar to see what's coming up." />
           )}
           {agenda.error?.includes("Not configured") && <span className="setup-hint">Add a calendar URL in your local .env file</span>}
           <p className="panel-footnote">Calendar details stay private · ICS connection</p>
@@ -293,7 +506,7 @@ function Dashboard({
         <NewsPanel />
         <SportsPanel />
 
-        <Panel title="Money, in perspective" eyebrow="PERSONAL FINANCE" icon="chart" className="finance-panel">
+        <Panel title="Money, in perspective" eyebrow="PERSONAL FINANCE" icon="chart" className="finance-panel" resource={finance}>
           {finance.data ? (
             <>
               <div className="finance-intro"><span className="finance-badge">EUR</span><p>Daily reference exchange rates <span>· {finance.data.date}</span></p></div>
@@ -305,12 +518,12 @@ function Dashboard({
               <p className="finance-disclaimer">Public reference rates, not personal account balances. No bank connection.</p>
             </>
           ) : (
-            <ResourceState loading={finance.loading} error={finance.error} empty="Live exchange rates will appear here." />
+            <ResourceState loading={finance.loading} empty="Live exchange rates will appear here." />
           )}
           <p className="panel-footnote">Daily reference data · Frankfurter / ECB</p>
         </Panel>
 
-        <Panel title="Home, connected" eyebrow="SMART HOME" icon="home" className="home-panel">
+        <Panel title="Home, connected" eyebrow="SMART HOME" icon="home" className="home-panel" resource={home}>
           {homeDevices.length ? (
             <>
               <div className="home-overview">
@@ -323,13 +536,13 @@ function Dashboard({
               </div>
             </>
           ) : (
-            <ResourceState loading={home.loading} error={home.error} empty="Connect Home Assistant to see your devices." />
+            <ResourceState loading={home.loading} empty="Connect Home Assistant to see your devices." />
           )}
           {home.error?.includes("Not configured") && <span className="setup-hint">Set your Home Assistant URL and token locally</span>}
           <p className="panel-footnote">Private connection · Home Assistant</p>
         </Panel>
 
-        <Panel title="Made by you" eyebrow="PERSONAL PROJECTS" icon="grid" className="projects-panel">
+        <Panel title="Made by you" eyebrow="PERSONAL PROJECTS" icon="grid" className="projects-panel" resource={projects}>
           {projectsList.length ? (
             <div className="project-list">
               {projectsList.slice(0, 4).map((project) => (
@@ -341,7 +554,7 @@ function Dashboard({
               ))}
             </div>
           ) : (
-            <ResourceState loading={projects.loading} error={projects.error} empty="Your project links will live here." />
+            <ResourceState loading={projects.loading} empty="Your project links will live here." />
           )}
           {projects.error?.includes("Not configured") && <span className="setup-hint">Add links with PROJECTS_JSON in .env</span>}
           <p className="panel-footnote">Your links · configured locally</p>
@@ -460,14 +673,15 @@ function App() {
     );
   }
 
-  return (
-    <Dashboard
-      user={access.user}
-      csrfToken={access.csrfToken}
-      signOutError={signOutError}
-      onSignOut={signOut}
-    />
-  );
+  const pageProps = {
+    user: access.user,
+    csrfToken: access.csrfToken,
+    signOutError,
+    onSignOut: signOut,
+  };
+  return window.location.pathname.replace(/\/+$/, "") === "/news"
+    ? <NewsCenter {...pageProps} />
+    : <Dashboard {...pageProps} />;
 }
 
 export default App;

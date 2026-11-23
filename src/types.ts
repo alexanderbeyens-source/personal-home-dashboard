@@ -1,8 +1,10 @@
 export interface LiveResource<T> {
   data: T | null;
   loading: boolean;
+  refreshing: boolean;
   error: string | null;
   updatedAt: Date | null;
+  refresh: () => Promise<void>;
 }
 
 export interface WeatherData {
@@ -16,16 +18,66 @@ export interface WeatherData {
 }
 
 export interface NewsArticle {
+  id: string;
   title: string;
   link: string;
+  sourceId: string;
   source: string;
+  sourceKind: "journalism" | "official-company" | "official-institution" | "personal-blog" | "community-aggregator";
+  category: string;
+  language: string;
   publishedAt: string | null;
+  coverage: {
+    sourceId: string;
+    source: string;
+    sourceKind: NewsArticle["sourceKind"];
+    category: string;
+    language: string;
+    title: string;
+    link: string;
+    publishedAt: string | null;
+  }[];
+}
+
+export interface NewsSource {
+  id: string;
+  name: string;
+  category: string;
+  language: string;
+  kind: NewsArticle["sourceKind"];
+}
+
+export interface NewsWarning {
+  sourceId: string;
+  source: string;
+  message: string;
+  stale: boolean;
+  fetchedAt: string | null;
+  latestPublishedAt?: string;
+}
+
+export interface NewsResponse {
+  articles: NewsArticle[];
+  availableCount: number;
+  hasMore: boolean;
+  sources: NewsSource[];
+  feedStatus: {
+    sourceId: string;
+    fetchedAt: string | null;
+    stale: boolean;
+    contentStale: boolean;
+    itemCount: number;
+  }[];
+  warnings: NewsWarning[];
+  stale: boolean;
+  updatedAt: string;
 }
 
 export interface ScoreEvent {
   id: string;
   name: string;
   date: string;
+  state: "pre" | "in" | "post" | null;
   status: string;
   shortStatus: string;
   competitors: {
@@ -42,6 +94,7 @@ export interface SportsData {
   events: ScoreEvent[];
   news: NewsArticle[];
   featuredPlayers?: { name: string; team: string; url: string }[];
+  warnings?: string[];
 }
 
 export interface CalendarEvent {

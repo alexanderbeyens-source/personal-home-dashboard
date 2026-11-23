@@ -6,6 +6,8 @@ import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { Auth } from "@auth/core";
 import GitHub from "@auth/core/providers/github";
+import { loadNbaData, loadNbaPlayers, mapSportsEvents } from "./data.js";
+import { createNewsService } from "./news.js";
 
 const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
 
@@ -256,60 +258,81 @@ async function fetchText(url, options = {}) {
   return response.text();
 }
 
-function decodeXml(value) {
-  return value
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;|&#39;/g, "'")
-    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))
-    .replace(/<[^>]*>/g, "")
-    .trim();
+async function readLimitedBody(response, maxBytes) {
+  const contentLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw new Error("Data source response exceeded the size limit.");
+  }
+  if (!response.body) throw new Error("Data source returned an empty response.");
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > maxBytes) {
+      await reader.cancel();
+      throw new Error("Data source response exceeded the size limit.");
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks, totalBytes).toString("utf8");
 }
 
-function parseRss(xml, limit = 8) {
-  const items = [...xml.matchAll(/<(?:item|entry)\b[\s\S]*?<\/(?:item|entry)>/gi)].slice(0, limit);
-  return items.map(([item]) => {
-    const readTag = (tag) => {
-      const match = item.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
-      return match ? decodeXml(match[1]) : "";
-    };
-    const linkTag = item.match(/<link\b[^>]*>([\s\S]*?)<\/link>/i);
-    const atomLink = item.match(/<link\b[^>]*href=["']([^"']+)["'][^>]*\/?>/i);
-    const date = readTag("pubDate") || readTag("published") || readTag("updated");
-    const source = readTag("source") || "Live feed";
-    return {
-      title: readTag("title"),
-      link: decodeXml(linkTag?.[1] || atomLink?.[1] || ""),
-      source,
-      publishedAt: date ? new Date(date).toISOString() : null,
-    };
-  }).filter((item) => item.title && item.link);
+async function fetchNewsContent(source, expectJson) {
+  const initialUrl = new URL(source.url);
+  if (initialUrl.protocol !== "https:" || initialUrl.username || initialUrl.password) {
+    throw new Error("News source URL is not approved.");
+  }
+  let currentUrl = initialUrl;
+  for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
+    const response = await fetch(currentUrl, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(12000),
+      headers: {
+        accept: expectJson
+          ? "application/json"
+          : "application/rss+xml, application/atom+xml, application/xml, text/xml",
+        "user-agent": "NorthstarHomeDashboard/0.1",
+      },
+    });
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      const location = response.headers.get("location");
+      if (!location || redirectCount === 3) throw new Error("News source returned an invalid redirect.");
+      const redirectUrl = new URL(location, currentUrl);
+      await response.body?.cancel();
+      if (redirectUrl.origin !== initialUrl.origin || redirectUrl.username || redirectUrl.password) {
+        throw new Error("News source redirected outside its approved host.");
+      }
+      currentUrl = redirectUrl;
+      continue;
+    }
+    if (!response.ok) throw new Error(`News source returned ${response.status}.`);
+
+    const contentType = response.headers.get("content-type") ?? "";
+    const validContentType = expectJson
+      ? /(?:application|text)\/(?:[\w.+-]*\+)?json\b/i.test(contentType)
+      : /(?:application\/(?:rss\+xml|atom\+xml|xml)|text\/xml)\b/i.test(contentType);
+    if (!validContentType) throw new Error("News source returned an unsupported content type.");
+
+    const body = await readLimitedBody(response, 512 * 1024);
+    if (!expectJson) return body;
+    try {
+      return JSON.parse(body);
+    } catch {
+      throw new Error("News source returned invalid JSON.");
+    }
+  }
+  throw new Error("News source exceeded the redirect limit.");
 }
 
-function mapSportsEvents(payload) {
-  return (payload.events ?? []).map((event) => {
-    const competition = event.competitions?.[0];
-    return {
-      id: event.id,
-      name: event.name,
-      date: event.date,
-      status: event.status?.type?.description ?? "Scheduled",
-      shortStatus: event.status?.type?.shortDetail ?? event.status?.type?.detail ?? "Upcoming",
-      competitors: (competition?.competitors ?? []).map((competitor) => ({
-        name: competitor.team?.displayName ?? competitor.team?.name ?? "Team",
-        abbreviation: competitor.team?.abbreviation ?? "—",
-        score: competitor.score ?? "",
-        homeAway: competitor.homeAway ?? "",
-        logo: competitor.team?.logo ?? null,
-        winner: Boolean(competitor.winner),
-      })),
-    };
-  });
-}
+const newsService = createNewsService({
+  fetchXml: (source) => fetchNewsContent(source, false),
+  fetchJson: (source) => fetchNewsContent(source, true),
+  onSourceError: (source, error) => console.error("News source failed:", source.id, error.name),
+});
 
 function parseCalendar(ics) {
   const events = [...ics.matchAll(/BEGIN:VEVENT([\s\S]*?)END:VEVENT/g)]
@@ -425,14 +448,14 @@ async function getHomeAssistant() {
 
 async function routeApi(url) {
   if (url.pathname === "/api/weather") {
-    const latitude = Number(process.env.WEATHER_LAT || 50.8503);
-    const longitude = Number(process.env.WEATHER_LON || 4.3517);
+    const latitude = Number(process.env.WEATHER_LAT || 50.9894);
+    const longitude = Number(process.env.WEATHER_LON || 5.0506);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
       const error = new Error("Weather location is not configured correctly.");
       error.status = 500;
       throw error;
     }
-    const location = process.env.WEATHER_LOCATION || "Brussels";
+    const location = process.env.WEATHER_LOCATION || "Diest";
     const query = new URLSearchParams({
       latitude: String(latitude),
       longitude: String(longitude),
@@ -452,66 +475,59 @@ async function routeApi(url) {
   }
 
   if (url.pathname === "/api/news") {
-    const feeds = {
-      world: "https://feeds.bbci.co.uk/news/rss.xml",
-      technology: "https://feeds.bbci.co.uk/news/technology/rss.xml",
-      business: "https://feeds.bbci.co.uk/news/business/rss.xml",
+    const categoryAliases = {
+      world: "international",
+      technology: "technology-ai",
+      business: "economy-business",
     };
-    const category = url.searchParams.get("category") ?? "world";
-    if (!feeds[category]) {
-      const error = new Error("Unknown news category.");
-      error.status = 400;
-      throw error;
-    }
-    return parseRss(await fetchText(feeds[category]));
+    const requestedCategory = url.searchParams.get("category") ?? "world";
+    const category = categoryAliases[requestedCategory] ?? requestedCategory;
+    const isLegacyRequest =
+      !url.searchParams.has("view") &&
+      (url.searchParams.size === 0 ||
+        (Object.hasOwn(categoryAliases, requestedCategory) && url.searchParams.size === 1));
+    const result = await newsService.query({
+      view: url.searchParams.get("view") ?? undefined,
+      category,
+      sourceId: url.searchParams.get("source") ?? undefined,
+      since: url.searchParams.get("since") ?? (isLegacyRequest ? "all" : "7d"),
+      limit: url.searchParams.has("limit")
+        ? url.searchParams.get("limit")
+        : isLegacyRequest
+          ? 8
+          : undefined,
+    });
+    return isLegacyRequest ? result.articles.slice(0, 8) : result;
   }
 
   if (url.pathname === "/api/sports/nba") {
-    const [scoreboard, news, portlandRoster, oklahomaRoster] = await Promise.all([
-      fetchJson("https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?limit=30"),
-      fetchJson("https://site.api.espn.com/apis/site/v2/sports/basketball/nba/news?limit=10"),
-      fetchJson("https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/por/roster"),
-      fetchJson("https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/okc/roster"),
-    ]);
-    const rosterPlayers = [
-      {
-        athlete: portlandRoster.athletes?.find((player) => /toumani camara/i.test(player.fullName ?? "")),
-        name: "Toumani Camara",
-        team: portlandRoster.team?.displayName,
-      },
-      {
-        athlete: oklahomaRoster.athletes?.find((player) => /ajay mitchell/i.test(player.fullName ?? "")),
-        name: "AJ Mitchell",
-        team: oklahomaRoster.team?.displayName,
-      },
-    ];
-    const featuredPlayers = rosterPlayers.map(({ athlete, name, team }) => {
-      const profile = athlete?.links?.find((link) => link.rel?.includes("playercard"))?.href;
-      if (!athlete || !profile || !team) throw new Error(`ESPN roster data did not include a profile for ${name}.`);
+    return loadNbaData(fetchJson, async () => {
+      const result = await newsService.loadSource("espn-nba-news");
       return {
-        name,
-        team,
-        url: profile,
+        articles: result.articles,
+        warnings: result.warnings.map((warning) => warning.message),
       };
     });
-    return {
-      events: mapSportsEvents(scoreboard),
-      featuredPlayers,
-      news: (news.articles ?? []).slice(0, 8).map((article) => ({
-        title: article.headline ?? article.title ?? "",
-        link: article.links?.web?.href ?? article.links?.api?.news?.href ?? "",
-        source: "ESPN",
-        publishedAt: article.published ?? null,
-      })).filter((article) => article.title && article.link),
-    };
   }
 
+  if (url.pathname === "/api/sports/nba/players") return loadNbaPlayers(fetchJson);
+
   if (url.pathname === "/api/sports/premier-league") {
-    const [scoreboard, newsFeed] = await Promise.all([
+    const [scoreboardResult, newsResult] = await Promise.allSettled([
       fetchJson("https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard?limit=30"),
-      fetchText("https://feeds.bbci.co.uk/sport/football/premier-league/rss.xml"),
+      newsService.loadSource("bbc-premier-league"),
     ]);
-    return { events: mapSportsEvents(scoreboard), news: parseRss(newsFeed, 5) };
+    if (scoreboardResult.status === "rejected") throw scoreboardResult.reason;
+    const warnings = newsResult.status === "fulfilled" && newsResult.value.warnings.length
+      ? newsResult.value.warnings.map((warning) => warning.message)
+      : newsResult.status === "rejected"
+        ? ["Premier League headlines are temporarily unavailable."]
+        : [];
+    return {
+      events: mapSportsEvents(scoreboardResult.value),
+      news: newsResult.status === "fulfilled" ? newsResult.value.articles.slice(0, 5) : [],
+      warnings,
+    };
   }
 
   if (url.pathname === "/api/calendar") {

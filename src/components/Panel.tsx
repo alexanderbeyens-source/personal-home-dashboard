@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Icon } from "./Icon";
+import type { LiveResource } from "../types";
 
 type IconKey =
   | "sun"
@@ -17,13 +18,27 @@ export function Panel({
   icon,
   className = "",
   children,
+  resource,
 }: {
   title: string;
   eyebrow: string;
   icon: IconKey;
   className?: string;
   children: ReactNode;
+  resource: LiveResource<unknown>;
 }) {
+  const status = resource.loading && resource.data === null
+    ? "Loading live data…"
+    : resource.refreshing
+      ? `Refreshing · last successful update ${formatUpdateTime(resource.updatedAt)}`
+      : resource.error
+        ? resource.data === null
+          ? `Unable to load: ${resource.error}`
+          : `Refresh failed: ${resource.error} · last successful update ${formatUpdateTime(resource.updatedAt)}`
+        : resource.updatedAt
+          ? `Last updated ${formatUpdateTime(resource.updatedAt)}`
+          : "No successful update yet";
+
   return (
     <section className={`panel ${className}`}>
       <div className="panel-heading">
@@ -34,32 +49,38 @@ export function Panel({
             <h2>{title}</h2>
           </div>
         </div>
-        <span className="panel-mark" aria-hidden="true">↗</span>
+        <button
+          className="panel-refresh"
+          type="button"
+          aria-label={`Refresh ${title}`}
+          title={`Refresh ${title}`}
+          disabled={resource.loading || resource.refreshing}
+          onClick={() => void resource.refresh()}
+        >
+          {resource.refreshing ? <span className="loader" /> : <Icon name="refresh" size={15} />}
+        </button>
       </div>
+      <p className={`panel-resource-status${resource.error ? " has-error" : ""}`} role="status" aria-live="polite">
+        {status}
+      </p>
       {children}
     </section>
   );
 }
 
-export function ResourceState({
-  loading,
-  error,
-  empty,
-}: {
-  loading: boolean;
-  error: string | null;
-  empty: string;
-}) {
+function formatUpdateTime(date: Date | null) {
+  if (!date) return "not available";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+export function ResourceState({ loading, empty }: { loading: boolean; empty: string }) {
   if (loading) {
     return <div className="state-message"><span className="loader" />Fetching live data…</div>;
-  }
-  if (error) {
-    return (
-      <div className="state-message state-error">
-        <span className="state-dot" />
-        <span>{error}</span>
-      </div>
-    );
   }
   return <div className="state-message">{empty}</div>;
 }

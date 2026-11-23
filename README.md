@@ -42,12 +42,14 @@ Before the first deploy:
 
 The app uses no database or persistent filesystem storage. Render Free services sleep after 15 minutes without traffic and take about a minute to wake. Home Assistant must be reachable from Render; a LAN-only instance will not work, and should not be exposed directly just to connect it.
 
+The default weather location is Diest. Override `WEATHER_LAT`, `WEATHER_LON`, and `WEATHER_LOCATION` in the server environment to use another location.
+
 Do not make the service public without authentication. All API routes require the allow-listed GitHub account; only `/healthz` and the OAuth flow are unauthenticated. A Smart TV browser must support GitHub sign-in to use the service.
 
 ## Live data and integrations
 
 - Weather: Open-Meteo, using the coordinates in `.env`.
-- Headlines: BBC RSS feeds for world, technology, and business news.
+- Headlines: the protected `/api/news` route aggregates RTBF, BBC News, The Guardian, Ars Technica, MIT Technology Review, BBC Business, De Tijd, Simon Willison, GitHub Changelog, ESPN NBA News, and BBC Sport's Premier League feed. VRT NWS remains in the server-side source configuration but is currently disabled. The dashboard shows a five-story balanced briefing; `/news` provides category, source, and recency filters. Feeds are fetched server-side, cached in memory, and isolated so one unavailable source does not block the rest. Legacy `world`, `technology`, and `business` category requests remain supported.
 - Sports: ESPN's public NBA and Premier League scoreboards; NBA news is also from ESPN. The Premier League standings link opens the league's live table.
 - Finance: Frankfurter's daily EUR reference rates (based on ECB data). No bank connection or personal account balances.
 - Calendar: set `CALENDAR_ICS_URL` to a calendar's private/unlisted ICS feed URL. It remains on the server.
@@ -57,3 +59,5 @@ Do not make the service public without authentication. All API routes require th
 The calendar and Home Assistant cards show a connection state until configured. No fake/sample headlines, scores, events, or balances are used. Providers can rate-limit or change their public endpoints, so unavailable live sources are shown as errors rather than replaced with sample values.
 
 Keep `.env` private and never commit real calendar URLs, Home Assistant tokens, or other credentials.
+
+Run the focused automated regression suite with `npm test`.
