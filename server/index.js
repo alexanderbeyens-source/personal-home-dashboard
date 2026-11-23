@@ -124,7 +124,7 @@ function applySecurityHeaders(response) {
       "base-uri 'self'",
       "object-src 'none'",
       "frame-ancestors 'none'",
-      "form-action 'self'",
+      "form-action 'self' https://github.com",
       "script-src 'self'",
       "style-src 'self' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
