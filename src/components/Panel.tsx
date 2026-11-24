@@ -28,18 +28,18 @@ export function Panel({
   resource: LiveResource<unknown>;
 }) {
   const status = resource.loading && resource.data === null
-    ? "Loading live data…"
+    ? "Live gegevens laden…"
     : resource.refreshing
-      ? `Refreshing · last successful update ${formatUpdateTime(resource.updatedAt)}`
+      ? `Vernieuwen · laatste geslaagde update ${formatUpdateTime(resource.updatedAt)}`
       : resource.notConfigured
-        ? "Not configured on the server"
+        ? "Niet geconfigureerd op de server"
       : resource.error
         ? resource.data === null
-          ? `Unable to load: ${resource.error}`
-          : `Refresh failed: ${resource.error} · last successful update ${formatUpdateTime(resource.updatedAt)}`
+          ? `Laden mislukt: ${resource.error}`
+          : `Vernieuwen mislukt: ${resource.error} · laatste geslaagde update ${formatUpdateTime(resource.updatedAt)}`
         : resource.updatedAt
-          ? `Last updated ${formatUpdateTime(resource.updatedAt)}`
-          : "No successful update yet";
+          ? `Bijgewerkt ${formatUpdateTime(resource.updatedAt)}`
+          : "Nog geen geslaagde update";
 
   return (
     <section className={`panel ${className}`}>
@@ -54,8 +54,8 @@ export function Panel({
         <button
           className="panel-refresh"
           type="button"
-          aria-label={`Refresh ${title}`}
-          title={`Refresh ${title}`}
+          aria-label={`${title} vernieuwen`}
+          title={`${title} vernieuwen`}
           disabled={resource.loading || resource.refreshing}
           onClick={() => void resource.refresh()}
         >
@@ -71,8 +71,8 @@ export function Panel({
 }
 
 function formatUpdateTime(date: Date | null) {
-  if (!date) return "not available";
-  return new Intl.DateTimeFormat(undefined, {
+  if (!date) return "niet beschikbaar";
+  return new Intl.DateTimeFormat("nl-BE", {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -82,7 +82,7 @@ function formatUpdateTime(date: Date | null) {
 
 export function ResourceState({ loading, empty }: { loading: boolean; empty: string }) {
   if (loading) {
-    return <div className="state-message"><span className="loader" />Fetching live data…</div>;
+    return <div className="state-message"><span className="loader" />Live gegevens ophalen…</div>;
   }
   return <div className="state-message">{empty}</div>;
 }

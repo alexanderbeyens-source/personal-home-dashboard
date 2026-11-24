@@ -4,22 +4,22 @@ const WORLD_BANK_API = "https://api.worldbank.org/v2/country/WLD/indicator/NY.GD
 const SSGA_IMIE_URL = "https://www.ssga.com/uk/en_gb/intermediary/etfs/funds/spdr-msci-acwi-imi-ucits-etf-spyi-gy";
 
 const DATA_SOURCES = [
-  { key: "depositRate", label: "ECB deposit facility rate", ttlMs: 6 * 60 * 60 * 1000 },
-  { key: "refinancingRate", label: "ECB main refinancing rate", ttlMs: 6 * 60 * 60 * 1000 },
-  { key: "lendingRate", label: "ECB marginal lending rate", ttlMs: 6 * 60 * 60 * 1000 },
-  { key: "worldGrowth", label: "World real GDP growth", ttlMs: 30 * 24 * 60 * 60 * 1000 },
-  { key: "belgiumInflation", label: "Belgian HICP", ttlMs: 24 * 60 * 60 * 1000 },
-  { key: "euroAreaInflation", label: "Euro-area HICP", ttlMs: 24 * 60 * 60 * 1000 },
-  { key: "mortgageRates", label: "Belgian mortgage rates", ttlMs: 24 * 60 * 60 * 1000 },
-  { key: "electricityPrices", label: "Belgian household electricity prices", ttlMs: 7 * 24 * 60 * 60 * 1000 },
-  { key: "gasPrices", label: "Belgian household natural-gas prices", ttlMs: 7 * 24 * 60 * 60 * 1000 },
-  { key: "imiePrice", label: "IMIE ETF market price", ttlMs: 6 * 60 * 60 * 1000 },
+  { key: "depositRate", label: "ECB-depositorente", ttlMs: 6 * 60 * 60 * 1000 },
+  { key: "refinancingRate", label: "ECB-herfinancieringsrente", ttlMs: 6 * 60 * 60 * 1000 },
+  { key: "lendingRate", label: "ECB-marginale beleningsrente", ttlMs: 6 * 60 * 60 * 1000 },
+  { key: "worldGrowth", label: "Mondiale reële bbp-groei", ttlMs: 30 * 24 * 60 * 60 * 1000 },
+  { key: "belgiumInflation", label: "Belgische HICP", ttlMs: 24 * 60 * 60 * 1000 },
+  { key: "euroAreaInflation", label: "HICP eurozone", ttlMs: 24 * 60 * 60 * 1000 },
+  { key: "mortgageRates", label: "Belgische hypotheekrente", ttlMs: 24 * 60 * 60 * 1000 },
+  { key: "electricityPrices", label: "Elektriciteitsprijzen Belgische gezinnen", ttlMs: 7 * 24 * 60 * 60 * 1000 },
+  { key: "gasPrices", label: "Aardgasprijzen Belgische gezinnen", ttlMs: 7 * 24 * 60 * 60 * 1000 },
+  { key: "imiePrice", label: "IMIE ETF-koers", ttlMs: 6 * 60 * 60 * 1000 },
 ];
 
 const POLICY_SERIES = [
-  { id: "deposit", label: "Deposit facility", code: "DFR" },
-  { id: "refinancing", label: "Main refinancing operations", code: "MRR_FR" },
-  { id: "lending", label: "Marginal lending facility", code: "MLFR" },
+  { id: "deposit", label: "Depositorente", code: "DFR" },
+  { id: "refinancing", label: "Basisherfinancieringsrente", code: "MRR_FR" },
+  { id: "lending", label: "Marginale beleningsrente", code: "MLFR" },
 ];
 
 const ECB_POLICY_SOURCE = "https://data.ecb.europa.eu/data/datasets/FM";
@@ -65,7 +65,7 @@ export function createEconomicsService({ loaders, now = () => Date.now() }) {
         });
         return { value, stale: false, fetchedAt, warning: null };
       } catch (error) {
-        const warning = error instanceof Error ? error.message : "Source is temporarily unavailable.";
+        const warning = error instanceof Error ? error.message : "Bron is tijdelijk niet beschikbaar.";
         const previous = cache.get(source.key);
         const hasPreviousValue = previous?.value !== null && previous?.value !== undefined;
         const failedAt = now();
@@ -110,7 +110,7 @@ export function createEconomicsService({ loaders, now = () => Date.now() }) {
     ]));
     const rates = [data.depositRate, data.refinancingRate, data.lendingRate].filter(Boolean);
     data.policyRates = rates.length
-      ? { rates, source: "European Central Bank", sourceUrl: ECB_POLICY_SOURCE }
+      ? { rates, source: "Europese Centrale Bank", sourceUrl: ECB_POLICY_SOURCE }
       : null;
     delete data.depositRate;
     delete data.refinancingRate;
@@ -168,9 +168,9 @@ async function loadWorldGrowth(fetchJson, currentTime) {
     .slice(-12);
   return createSeriesMetric({
     series,
-    unit: "% y/y",
-    frequency: "Annual · real GDP growth",
-    source: "World Bank · World Development Indicators",
+    unit: "% j/j",
+    frequency: "Jaarlijks · reële bbp-groei",
+    source: "Wereldbank · World Development Indicators",
     sourceUrl: "https://data.worldbank.org/indicator/NY.GDP.MKTP.KD.ZG?locations=1W",
     sourceUpdatedAt: payload?.[0]?.lastupdated ?? null,
     maxObservationAgeMs: ANNUAL_DATA_MAX_AGE_MS,
@@ -205,11 +205,11 @@ async function loadPolicyRate(fetchText, series, currentTime) {
     unit: "%",
     period: latest.date,
     lastChangeDate: lastChange?.date ?? null,
-    frequency: "Daily",
+    frequency: "Dagelijks",
     history: rows
       .filter((item) => item.date >= historyStart)
       .map(({ date, value }) => ({ period: date, value })),
-    source: "European Central Bank",
+    source: "Europese Centrale Bank",
     sourceUrl: ECB_POLICY_SOURCE,
     observationStale: isObservationStale(latest.date, DAILY_DATA_MAX_AGE_MS, currentTime),
   };
@@ -221,8 +221,8 @@ async function loadInflation(fetchJson, geography, currentTime) {
   const series = eurostatTimeSeries(payload, 13);
   return createSeriesMetric({
     series,
-    unit: "% y/y",
-    frequency: "Monthly · annual rate of change",
+    unit: "% j/j",
+    frequency: "Maandelijks · jaarlijkse wijziging",
     source: "Eurostat · HICP",
     sourceUrl: EUROSTAT_INFLATION_SOURCE,
     sourceUpdatedAt: payload.updated ?? null,
@@ -247,10 +247,10 @@ async function loadMortgageRates(fetchText, currentTime) {
   return createSeriesMetric({
     series,
     unit: "%",
-    frequency: "Monthly · new housing loans, all initial rate-fixation periods",
-    source: "European Central Bank · MIR",
+    frequency: "Maandelijks · nieuwe woonkredieten, alle initiële rentevasteperiodes",
+    source: "Europese Centrale Bank · MIR",
     sourceUrl: ECB_MORTGAGE_SOURCE,
-    disclaimer: "Historical average for new housing loans; not a personal bank offer.",
+    disclaimer: "Historisch gemiddelde voor nieuwe woonkredieten; geen persoonlijke bankofferte.",
     maxObservationAgeMs: MONTHLY_DATA_MAX_AGE_MS,
     currentTime,
   });
@@ -278,15 +278,15 @@ async function loadEnergyPrice(fetchJson, {
   return createSeriesMetric({
     series,
     unit: "EUR/kWh",
-    frequency: "Half-yearly · household price, all taxes and levies included",
-    source: `Eurostat · Belgian ${resource.toLowerCase()} consumer price`,
+    frequency: "Halfjaarlijks · prijs voor gezinnen, alle belastingen en heffingen inbegrepen",
+    source: `Eurostat · Belgische consumentenprijs ${resource === "Electricity" ? "elektriciteit" : "aardgas"}`,
     sourceUrl,
     sourceUpdatedAt: payload.updated ?? null,
     maxObservationAgeMs: SEMIANNUAL_DATA_MAX_AGE_MS,
     currentTime,
     consumptionBand: consumption === "KWH2500-4999"
-      ? "2,500-4,999 kWh/year household band"
-      : "20-199 GJ/year household band",
+      ? "verbruiksklasse 2.500-4.999 kWh/jaar"
+      : "verbruiksklasse 20-199 GJ/jaar",
   });
 }
 
@@ -310,9 +310,9 @@ async function loadImieMarketPrice(fetchText, currentTime) {
   return {
     value,
     unit: "EUR",
-    priceType: "Official issuer closing price",
+    priceType: "Officiële slotkoers van de uitgever",
     period: date.toISOString().slice(0, 10),
-    frequency: "Daily · market close",
+    frequency: "Dagelijks · slotkoers",
     source: "State Street Global Advisors · SPDR",
     sourceUrl: SSGA_IMIE_URL,
     observationStale: isObservationStale(date.toISOString().slice(0, 10), DAILY_DATA_MAX_AGE_MS, currentTime),

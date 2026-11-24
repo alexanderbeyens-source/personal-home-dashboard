@@ -1,10 +1,10 @@
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 
 export const NEWS_CATEGORIES = [
-  { id: "belgium", label: "Belgium" },
-  { id: "international", label: "International" },
-  { id: "technology-ai", label: "Technology & AI" },
-  { id: "economy-business", label: "Economy & business" },
+  { id: "belgium", label: "België" },
+  { id: "international", label: "Internationaal" },
+  { id: "technology-ai", label: "Technologie & AI" },
+  { id: "economy-business", label: "Economie & business" },
   { id: "sport", label: "Sport" },
 ];
 
@@ -461,7 +461,7 @@ export function createNewsService({
     const currentTime = now();
     if (cached && currentTime - cached.fetchedAt < ttlMs) return sourceResult(cached, false, null, currentTime);
     if ((retryAfter.get(sourceId) ?? 0) > currentTime) {
-      return failedSourceResult(source, cached, "Feed temporarily unavailable; retry is delayed.", currentTime);
+      return failedSourceResult(source, cached, "Feed tijdelijk niet beschikbaar; nieuwe poging volgt later.", currentTime);
     }
     const existing = inFlight.get(sourceId);
     if (existing) return existing;
@@ -483,7 +483,7 @@ export function createNewsService({
       } catch (error) {
         retryAfter.set(sourceId, now() + retryMs);
         onSourceError(source, error);
-        return failedSourceResult(source, cached, "Feed unavailable; showing the last successful data when available.", now());
+        return failedSourceResult(source, cached, "Feed niet beschikbaar; de laatste geslaagde gegevens worden getoond indien beschikbaar.", now());
       } finally {
         if (inFlight.get(sourceId) === request) inFlight.delete(sourceId);
       }
@@ -523,7 +523,7 @@ export function createNewsService({
         warnings.push({
           sourceId,
           source: source?.name ?? sourceId,
-          message: "Stories with unknown language metadata were excluded from Belgium; only Dutch and English are shown.",
+          message: "Artikels zonder bekende taal zijn uit België weggelaten; alleen Nederlands en Engels worden getoond.",
           stale: false,
           fetchedAt: feedResults.find((result) => result.source.id === sourceId)?.fetchedAt ?? null,
         });
@@ -602,7 +602,7 @@ function sourceResult(entry, stale, warning, currentTime = Date.now()) {
     warnings.push({
       sourceId: entry.source.id,
       source: entry.source.name,
-      message: "The newest published item is more than 14 days old.",
+      message: "Het recentste item is meer dan 14 dagen oud.",
       stale: false,
       fetchedAt: new Date(entry.fetchedAt).toISOString(),
       latestPublishedAt: new Date(latestPublishedAt).toISOString(),

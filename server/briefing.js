@@ -33,8 +33,8 @@ export function createDailyBriefingService({
             warnings: [
               ...cached.value.warnings,
               {
-                source: "Daily briefing",
-                message: "Refresh failed; showing the last generated briefing.",
+                source: "Dagelijkse briefing",
+                message: "Vernieuwen mislukt; de laatst gegenereerde briefing wordt getoond.",
                 stale: true,
               },
             ],
@@ -60,14 +60,14 @@ function retainStaleInputs(inputs, previous) {
     warnings: [...(inputs.warnings ?? [])],
   };
   const staleSources = [
-    ["economics", "Economic indicators"],
-    ["weather", "Weather · Open-Meteo"],
-    ["finance", "Reference rates · Frankfurter"],
+    ["economics", "Economische indicatoren"],
+    ["weather", "Weer · Open-Meteo"],
+    ["finance", "Referentiekoersen · Frankfurter"],
     ["nba", "NBA · ESPN"],
-    ["nbaPlayers", "NBA player rosters · ESPN"],
-    ["premierLeague", "Premier League · ESPN and BBC Sport"],
-    ["belgianFootball", "Belgian football · Sporza"],
-    ["agenda", "Calendar · ICS"],
+    ["nbaPlayers", "NBA-selecties · ESPN"],
+    ["premierLeague", "Premier League · ESPN en BBC Sport"],
+    ["belgianFootball", "Belgisch voetbal · Sporza"],
+    ["agenda", "Agenda · ICS"],
   ];
 
   for (const [key, source] of staleSources) {
@@ -80,7 +80,7 @@ function retainStaleInputs(inputs, previous) {
   for (const category of NEWS_CATEGORIES.map(({ id }) => id)) {
     if (retained.newsByCategory[category] === undefined && previous.newsByCategory?.[category]) {
       retained.newsByCategory[category] = previous.newsByCategory[category];
-      addStaleWarning(retained.warnings, `News · ${category}`);
+      addStaleWarning(retained.warnings, `Nieuws · ${category}`);
     }
   }
   return retained;
@@ -89,7 +89,7 @@ function retainStaleInputs(inputs, previous) {
 function addStaleWarning(warnings, source) {
   const warning = warnings.find((item) => item.source === source);
   if (warning) warning.stale = true;
-  else warnings.push({ source, message: "Refresh failed; showing the last successful data.", stale: true });
+  else warnings.push({ source, message: "Vernieuwen mislukt; de laatste geslaagde gegevens worden getoond.", stale: true });
 }
 
 export function composeDailyBriefing(inputs, currentTime = Date.now()) {
@@ -110,9 +110,9 @@ export function composeDailyBriefing(inputs, currentTime = Date.now()) {
   warnings.push(...(inputs.economics?.warnings ?? []));
   for (const [source, response] of [
     ["NBA · ESPN", inputs.nba],
-    ["NBA player rosters · ESPN", inputs.nbaPlayers],
-    ["Premier League · ESPN and BBC Sport", inputs.premierLeague],
-    ["Belgian football · Sporza", inputs.belgianFootball],
+    ["NBA-selecties · ESPN", inputs.nbaPlayers],
+    ["Premier League · ESPN en BBC Sport", inputs.premierLeague],
+    ["Belgisch voetbal · Sporza", inputs.belgianFootball],
   ]) {
     for (const message of response?.warnings ?? []) {
       warnings.push({ source, message, stale: false });
@@ -147,7 +147,7 @@ export function composeDailyBriefing(inputs, currentTime = Date.now()) {
     stale: false,
     topStories: selectedTopStories.map((article) => toStory(
       article,
-      "Ranked for freshness, source type and feed prominence, with category balance and topic diversity.",
+      "Gerangschikt op actualiteit, brontype en plaats in de feed, met categoriebalans en onderwerpvariatie.",
     )),
     sections: {
       belgiumInternational: groupedNews,
@@ -156,7 +156,7 @@ export function composeDailyBriefing(inputs, currentTime = Date.now()) {
     economy: {
       stories: additionalStories("economy-business", 1),
       referenceRates: finance,
-      referenceLabel: "ECB-based daily reference rates via Frankfurter",
+      referenceLabel: "Dagelijkse ECB-referentiekoersen via Frankfurter",
       indicatorDevelopments: selectEconomicDevelopments(inputs.economics, currentTime),
     },
     sports: {
@@ -212,17 +212,17 @@ function selectEconomicDevelopments(economics, currentTime) {
     const newest = recentPolicyChanges[0];
     developments.push({
       id: "ecb-policy-rate-change",
-      title: "Recent ECB policy-rate change",
-      summary: `${newest.label} changed on ${newest.lastChangeDate}. Current official rates: ${formatEconomicRates(economics.policyRates.rates)}.`,
-      source: "European Central Bank",
+      title: "Recente wijziging van de ECB-beleidsrente",
+      summary: `${newest.label} gewijzigd op ${newest.lastChangeDate}. Huidige officiële rentes: ${formatEconomicRates(economics.policyRates.rates)}.`,
+      source: "Europese Centrale Bank",
       sourceUrl: economics.policyRates.sourceUrl,
       period: newest.lastChangeDate,
     });
   }
 
   const inflation = [
-    ["Belgian HICP", economics.belgiumInflation],
-    ["Euro-area HICP", economics.euroAreaInflation],
+    ["Belgische HICP", economics.belgiumInflation],
+    ["HICP eurozone", economics.euroAreaInflation],
   ].filter(([, metric]) =>
     metric && !metric.stale && !metric.observationStale &&
     Number.isFinite(metric.change) && Math.abs(metric.change) >= 0.5,
@@ -231,8 +231,8 @@ function selectEconomicDevelopments(economics, currentTime) {
     const [label, metric] = inflation[0];
     developments.push({
       id: `inflation-${label.toLowerCase().replaceAll(" ", "-")}`,
-      title: `${label} changed notably`,
-      summary: `${metric.value.toFixed(1)}% year over year in ${metric.period}, ${formatChange(metric.change)} percentage points versus the previous month.`,
+      title: `${label} opvallend gewijzigd`,
+      summary: `${metric.value.toFixed(1)}% op jaarbasis in ${metric.period}, ${formatChange(metric.change)} procentpunt t.o.v. de vorige maand.`,
       source: metric.source,
       sourceUrl: metric.sourceUrl,
       period: metric.period,
@@ -250,8 +250,8 @@ function selectEconomicDevelopments(economics, currentTime) {
   ) {
     developments.push({
       id: "belgian-mortgage-rate-change",
-      title: "Belgian new-mortgage rate changed notably",
-      summary: `${mortgage.value.toFixed(2)}% in ${mortgage.period}, ${formatChange(mortgage.change)} percentage points versus the previous month.`,
+      title: "Rente op nieuwe Belgische hypotheken opvallend gewijzigd",
+      summary: `${mortgage.value.toFixed(2)}% in ${mortgage.period}, ${formatChange(mortgage.change)} procentpunt t.o.v. de vorige maand.`,
       source: mortgage.source,
       sourceUrl: mortgage.sourceUrl,
       period: mortgage.period,
@@ -260,8 +260,8 @@ function selectEconomicDevelopments(economics, currentTime) {
 
   if (developments.length < 2) {
     const energy = [
-      ["Electricity", economics.electricityPrices],
-      ["Natural gas", economics.gasPrices],
+      ["Elektriciteit", economics.electricityPrices],
+      ["Aardgas", economics.gasPrices],
     ].filter(([, metric]) =>
       metric && !metric.stale && metric.previousValue > 0 &&
       !metric.observationStale &&
@@ -275,8 +275,8 @@ function selectEconomicDevelopments(economics, currentTime) {
       const percentChange = ((metric.value - metric.previousValue) / metric.previousValue) * 100;
       developments.push({
         id: `energy-${label.toLowerCase().replaceAll(" ", "-")}`,
-        title: `Belgian household ${label.toLowerCase()} price moved notably`,
-        summary: `${metric.value.toFixed(4)} EUR/kWh in ${metric.period}, ${formatChange(percentChange, 1)}% versus the previous half-year.`,
+        title: `${label === "Elektriciteit" ? "Elektriciteitsprijs" : "Aardgasprijs"} voor Belgische gezinnen opvallend gewijzigd`,
+        summary: `${metric.value.toFixed(4)} EUR/kWh in ${metric.period}, ${formatChange(percentChange, 1)}% t.o.v. het vorige halfjaar.`,
         source: metric.source,
         sourceUrl: metric.sourceUrl,
         period: metric.period,
@@ -295,8 +295,8 @@ function selectEconomicDevelopments(economics, currentTime) {
   ) {
     developments.push({
       id: "global-real-gdp-growth",
-      title: "Global real GDP growth shifted notably",
-      summary: `${worldGrowth.value.toFixed(1)}% in ${worldGrowth.period}, ${formatChange(worldGrowth.change)} percentage points versus the previous year.`,
+      title: "Mondiale reële bbp-groei opvallend gewijzigd",
+      summary: `${worldGrowth.value.toFixed(1)}% in ${worldGrowth.period}, ${formatChange(worldGrowth.change)} procentpunt t.o.v. het vorige jaar.`,
       source: worldGrowth.source,
       sourceUrl: worldGrowth.sourceUrl,
       period: worldGrowth.period,
@@ -308,13 +308,13 @@ function selectEconomicDevelopments(economics, currentTime) {
 
 function formatEconomicRates(rates) {
   return [
-    ["deposit", "deposit facility"],
-    ["refinancing", "main refinancing"],
-    ["lending", "marginal lending"],
+    ["deposit", "depositorente"],
+    ["refinancing", "herfinancieringsrente"],
+    ["lending", "marginale beleningsrente"],
   ]
     .map(([id, label]) => {
       const rate = rates.find((item) => item.id === id);
-      return rate ? `${label} ${rate.value.toFixed(2)}%` : `${label} unavailable`;
+      return rate ? `${label} ${rate.value.toFixed(2)}%` : `${label} niet beschikbaar`;
     })
     .join(", ");
 }
@@ -388,7 +388,7 @@ function createBriefingMatch(event, link) {
   return {
     ...event,
     link,
-    label: event.state === "in" ? "Live score" : event.state === "post" ? "Result" : "Scheduled",
+    label: event.state === "in" ? "Live" : event.state === "post" ? "Uitslag" : "Gepland",
     source: "ESPN",
   };
 }
@@ -400,8 +400,8 @@ function comparePublishedDates(first, second) {
 function deduplicateWarnings(warnings) {
   const unique = new Map();
   for (const warning of warnings) {
-    const source = warning.source || "Live data";
-    const message = warning.message || "Data is temporarily unavailable.";
+    const source = warning.source || "Live gegevens";
+    const message = warning.message || "Gegevens zijn tijdelijk niet beschikbaar.";
     const key = `${source}:${message}`;
     const stale = Boolean(warning.stale || unique.get(key)?.stale);
     unique.set(key, {
