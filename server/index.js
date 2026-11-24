@@ -401,8 +401,9 @@ function parseCalendarDate(value, timezone) {
 function requireConfig(keys) {
   const missing = keys.filter((key) => !process.env[key]);
   if (missing.length) {
-    const error = new Error(`Not configured. Set ${missing.join(" and ")} in your local .env file.`);
+    const error = new Error("This integration is not configured on the server.");
     error.status = 503;
+    error.code = "not_configured";
     throw error;
   }
 }
@@ -798,6 +799,9 @@ async function handleRequest(request, response) {
       return sendJson(response, 200, result);
     } catch (error) {
       const status = error.status ?? 502;
+      if (error.code === "not_configured") {
+        return sendJson(response, status, { error: error.message, code: "not_configured" });
+      }
       if (status >= 500) {
         console.error("API request failed:", url.pathname, error.name);
         return sendJson(response, status, { error: "Live data is temporarily unavailable." });

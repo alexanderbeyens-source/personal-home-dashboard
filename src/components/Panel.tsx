@@ -31,6 +31,8 @@ export function Panel({
     ? "Loading live data…"
     : resource.refreshing
       ? `Refreshing · last successful update ${formatUpdateTime(resource.updatedAt)}`
+      : resource.notConfigured
+        ? "Not configured on the server"
       : resource.error
         ? resource.data === null
           ? `Unable to load: ${resource.error}`
@@ -60,7 +62,7 @@ export function Panel({
           {resource.refreshing ? <span className="loader" /> : <Icon name="refresh" size={15} />}
         </button>
       </div>
-      <p className={`panel-resource-status${resource.error ? " has-error" : ""}`} role="status" aria-live="polite">
+      <p className={`panel-resource-status${resource.error && !resource.notConfigured ? " has-error" : ""}`} role="status" aria-live="polite">
         {status}
       </p>
       {children}

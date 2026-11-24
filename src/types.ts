@@ -3,6 +3,7 @@ export interface LiveResource<T> {
   loading: boolean;
   refreshing: boolean;
   error: string | null;
+  notConfigured: boolean;
   updatedAt: Date | null;
   refresh: () => Promise<void>;
 }

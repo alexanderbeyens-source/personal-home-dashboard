@@ -48,6 +48,22 @@ describe("useLiveResource", () => {
     expect(result.current.updatedAt).toBeNull();
   });
 
+  it("distinguishes a missing server configuration from a generic failure", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ error: "This integration is not configured on the server.", code: "not_configured" }, 503))
+      .mockResolvedValueOnce(jsonResponse({ error: "Live data is temporarily unavailable." }, 503));
+
+    const configured = renderHook(() => useLiveResource<{ value: string }>("/api/calendar", 60_000));
+    await waitFor(() => expect(configured.result.current.loading).toBe(false));
+    expect(configured.result.current.notConfigured).toBe(true);
+    expect(configured.result.current.data).toBeNull();
+
+    const failing = renderHook(() => useLiveResource<{ value: string }>("/api/weather", 60_000));
+    await waitFor(() => expect(failing.result.current.loading).toBe(false));
+    expect(failing.result.current.notConfigured).toBe(false);
+    expect(failing.result.current.error).toBe("Live data is temporarily unavailable.");
+  });
+
   it("preserves the last successful data after a failed refresh and can retry", async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ value: "last good value" }))

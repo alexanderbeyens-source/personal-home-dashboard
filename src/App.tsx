@@ -171,6 +171,7 @@ function EconomicCockpit() {
     loading: !hasData && resources.some((item) => item.loading),
     refreshing: hasData && resources.some((item) => item.loading || item.refreshing),
     error: resources.map((item) => item.error).filter(Boolean).join(" · ") || null,
+    notConfigured: false,
     updatedAt: resources.map((item) => item.updatedAt)
       .filter((date): date is Date => date !== null)
       .sort((first, second) => first.getTime() - second.getTime())[0] ?? null,
@@ -770,6 +771,7 @@ function SportsPanel() {
       premierLeague.error && `Premier League: ${premierLeague.error}`,
       belgianFootball.error && `Belgian football: ${belgianFootball.error}`,
     ].filter(Boolean).join(" · ") || null,
+    notConfigured: false,
     updatedAt: sportsResources.map((resource) => resource.updatedAt)
       .filter((date): date is Date => date !== null)
       .sort((a, b) => a.getTime() - b.getTime())[0] ?? null,
@@ -948,7 +950,7 @@ function Dashboard({
           ) : (
             <ResourceState loading={agenda.loading} empty="Connect a calendar to see what's coming up." />
           )}
-          {agenda.error?.includes("Not configured") && <span className="setup-hint">Add a calendar URL in your local .env file</span>}
+          {agenda.notConfigured && <span className="setup-hint">Set CALENDAR_ICS_URL in the server environment (Render) to show your agenda</span>}
           <p className="panel-footnote">Calendar details stay private · ICS connection</p>
         </Panel>
 
@@ -971,7 +973,7 @@ function Dashboard({
           ) : (
             <ResourceState loading={home.loading} empty="Connect Home Assistant to see your devices." />
           )}
-          {home.error?.includes("Not configured") && <span className="setup-hint">Set your Home Assistant URL and token locally</span>}
+          {home.notConfigured && <span className="setup-hint">Set HOME_ASSISTANT_URL and HOME_ASSISTANT_TOKEN in the server environment</span>}
           <p className="panel-footnote">Private connection · Home Assistant</p>
         </Panel>
 
