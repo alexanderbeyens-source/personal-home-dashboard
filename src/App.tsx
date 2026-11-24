@@ -3,6 +3,7 @@ import { Brand, currentPath, type AuthUser, type PageProps } from "./components/
 import { Icon } from "./components/Icon";
 import { AgendaPage } from "./pages/AgendaPage";
 import { BriefingPage } from "./pages/BriefingPage";
+import { TasksPage } from "./pages/TasksPage";
 import { Dashboard } from "./pages/Dashboard";
 import { EconomyPage } from "./pages/EconomyPage";
 import { NewsPage } from "./pages/NewsPage";
@@ -30,6 +31,7 @@ function AuthCard({ title, children }: { title: string; children: React.ReactNod
 function Page(props: PageProps) {
   const path = currentPath();
   if (path === "/briefing") return <BriefingPage {...props} />;
+  if (path === "/taken") return <TasksPage {...props} />;
   if (path === "/agenda") return <AgendaPage {...props} />;
   if (path === "/news" || path === "/nieuws") return <NewsPage {...props} />;
   if (path === "/sport" || path.startsWith("/sport/")) return <SportPage {...props} />;

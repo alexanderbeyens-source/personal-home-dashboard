@@ -14,6 +14,8 @@ import { createImieHistoryService } from "./imie-history.js";
 
 import { calendarsFromEnv, createCalendarService, isCalendarConfigured } from "./calendar.js";
 import { createSportsService } from "./sports.js";
+import { isAllowedOrigin, verifyCsrfToken } from "./csrf.js";
+import { createTasksService, tasksConfigFromEnv } from "./tasks.js";
 import { WEATHER_CURRENT, WEATHER_DAILY, WEATHER_HOURLY, mapForecast } from "./weather.js";
 
 const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
@@ -35,6 +37,7 @@ const authRequiredEnv = [
 const authMissingEnv = authRequiredEnv.filter((key) => !process.env[key]?.trim());
 let authConfig = null;
 let sessionCookieName = null;
+let csrfCookieName = null;
 
 if (authMissingEnv.length > 0) {
   console.error(`Authentication configuration is missing: ${authMissingEnv.join(", ")}`);
@@ -57,6 +60,7 @@ if (authMissingEnv.length === 0) {
 
     const secureCookie = authUrl.protocol === "https:";
     sessionCookieName = `${secureCookie ? "__Host-" : ""}northstar.session-token`;
+    csrfCookieName = `${secureCookie ? "__Host-" : ""}authjs.csrf-token`;
     authConfig = {
       secret: process.env.AUTH_SECRET,
       basePath: "/api/auth",
@@ -380,6 +384,37 @@ const newsService = createNewsService({
   onSourceError: (source, error) => console.error("News source failed:", source.id, error.name),
 });
 
+// GitHub Contents API for the configured task file. The token is only sent to api.github.com
+// and never logged or returned.
+async function githubTasksRequest(method, body) {
+  const config = tasksConfigFromEnv(process.env);
+  if (!config) requireConfig(["GITHUB_TASKS_TOKEN", "GITHUB_TASKS_REPO"]);
+  const path = config.path.split("/").map(encodeURIComponent).join("/");
+  const response = await fetch(`https://api.github.com/repos/${config.repo}/contents/${path}`, {
+    method,
+    signal: AbortSignal.timeout(12000),
+    redirect: "error",
+    headers: {
+      accept: "application/vnd.github+json",
+      authorization: `Bearer ${config.token}`,
+      "x-github-api-version": "2022-11-28",
+      "user-agent": "NorthstarHomeDashboard/0.1",
+      ...(body ? { "content-type": "application/json" } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await readLimitedBody(response, 1024 * 1024);
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = null;
+  }
+  return { status: response.status, json };
+}
+
+const tasksService = createTasksService({ github: githubTasksRequest });
+
 function requireConfig(keys) {
   const missing = keys.filter((key) => !process.env[key]);
   if (missing.length) {
@@ -615,6 +650,11 @@ async function routeApiUncached(url) {
     };
   }
 
+  if (url.pathname === "/api/tasks") {
+    if (!tasksConfigFromEnv(process.env)) requireConfig(["GITHUB_TASKS_TOKEN", "GITHUB_TASKS_REPO"]);
+    return tasksService.get({ refresh: url.searchParams.get("refresh") === "1" });
+  }
+
   if (url.pathname === "/api/calendar") {
     if (!isCalendarConfigured(process.env)) requireConfig(["CALENDAR_ICS_URLS"]);
     return calendarService.get({ refresh: url.searchParams.get("refresh") === "1" });
@@ -752,6 +792,94 @@ async function serveStatic(pathname, response) {
   }
 }
 
+const MAX_WRITE_BODY_BYTES = 2048;
+
+function readRequestBody(request, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    request.on("data", (chunk) => {
+      total += chunk.length;
+      if (total > maxBytes) {
+        const error = new Error("Verzoek is te groot.");
+        error.status = 413;
+        request.destroy();
+        reject(error);
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    request.on("error", reject);
+  });
+}
+
+function sendApiError(response, pathname, error) {
+  const status = error.status ?? 502;
+  if (error.code === "not_configured") {
+    return sendJson(response, status, { error: error.message, code: "not_configured" });
+  }
+  if (status >= 500) {
+    console.error("API request failed:", pathname, error.name);
+    return sendJson(response, status, { error: "Live gegevens zijn tijdelijk niet beschikbaar." });
+  }
+  return sendJson(response, status, { error: error.message || "Invalid request." });
+}
+
+// The only state-changing API route. Requires, in this order: POST, a configured
+// server, rate limit, same Origin as AUTH_URL, JSON content type, a small body, a valid
+// allow-listed session and Auth.js's double-submit CSRF token.
+async function handleTaskToggle(request, response, url) {
+  if (request.method !== "POST") {
+    response.setHeader("allow", "POST");
+    return sendJson(response, 405, { error: "Method not allowed." });
+  }
+  if (!authConfig) {
+    return sendJson(response, 503, { error: "Aanmelden is niet geconfigureerd op deze server." });
+  }
+  if (isRateLimited(request, "write", 30, 60_000)) {
+    return sendRateLimitResponse(response);
+  }
+  if (!isAllowedOrigin(request.headers.origin, process.env.AUTH_URL)) {
+    return sendJson(response, 403, { error: "Verzoek geweigerd." });
+  }
+  if (!String(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
+    return sendJson(response, 415, { error: "Verwacht JSON." });
+  }
+  if (Number(request.headers["content-length"] ?? 0) > MAX_WRITE_BODY_BYTES) {
+    return sendJson(response, 413, { error: "Verzoek is te groot." });
+  }
+
+  let user;
+  try {
+    user = await getAuthenticatedUser(request);
+  } catch (error) {
+    console.error("Session validation failed:", error.name);
+    return sendJson(response, 503, { error: "Authenticatie is tijdelijk niet beschikbaar." });
+  }
+  if (!user) return sendJson(response, 401, { error: "Aanmelden vereist." });
+
+  let body;
+  try {
+    body = JSON.parse(await readRequestBody(request, MAX_WRITE_BODY_BYTES));
+  } catch (error) {
+    return sendJson(response, error.status ?? 400, { error: error.status === 413 ? "Verzoek is te groot." : "Ongeldige JSON." });
+  }
+  if (!verifyCsrfToken({ cookieHeader: request.headers.cookie, cookieName: csrfCookieName, secret: process.env.AUTH_SECRET, bodyToken: body?.csrfToken })) {
+    return sendJson(response, 403, { error: "Verzoek geweigerd." });
+  }
+  if (typeof body.id !== "string" || !/^[a-f0-9]{16}$/.test(body.id) || typeof body.done !== "boolean") {
+    return sendJson(response, 400, { error: "Ongeldige taak." });
+  }
+
+  try {
+    if (!tasksConfigFromEnv(process.env)) requireConfig(["GITHUB_TASKS_TOKEN", "GITHUB_TASKS_REPO"]);
+    return sendJson(response, 200, await tasksService.toggle({ id: body.id, done: body.done }));
+  } catch (error) {
+    return sendApiError(response, url.pathname, error);
+  }
+}
+
 async function handleRequest(request, response) {
   applySecurityHeaders(response);
   let url;
@@ -771,6 +899,10 @@ async function handleRequest(request, response) {
 
   if (url.pathname === "/api/auth" || url.pathname.startsWith("/api/auth/")) {
     return handleAuthRequest(request, response, url);
+  }
+
+  if (url.pathname === "/api/tasks/toggle") {
+    return handleTaskToggle(request, response, url);
   }
 
   if (url.pathname.startsWith("/api/")) {
@@ -799,15 +931,7 @@ async function handleRequest(request, response) {
       if (result === null) return sendJson(response, 404, { error: "API route not found." });
       return sendJson(response, 200, result);
     } catch (error) {
-      const status = error.status ?? 502;
-      if (error.code === "not_configured") {
-        return sendJson(response, status, { error: error.message, code: "not_configured" });
-      }
-      if (status >= 500) {
-        console.error("API request failed:", url.pathname, error.name);
-        return sendJson(response, status, { error: "Live gegevens zijn tijdelijk niet beschikbaar." });
-      }
-      return sendJson(response, status, { error: error.message || "Invalid request." });
+      return sendApiError(response, url.pathname, error);
     }
   }
 

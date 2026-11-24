@@ -4,6 +4,7 @@ import { AgendaDays, groupAgenda } from "../components/agenda";
 import { CompactStory } from "../components/briefing";
 import { ImieCard, MetricCard, PolicyRateCard } from "../components/economy";
 import { Icon } from "../components/Icon";
+import { TasksPanel } from "../components/TasksPanel";
 import { ImieChart } from "../components/ImieChart";
 import { Panel, ResourceState, SectionTitle } from "../components/Panel";
 import { FixtureList, LeagueTabs, PlayerLines, StandingsTable, isLeagueId, leagueLabel } from "../components/sports";
@@ -293,6 +294,7 @@ export function Dashboard(props: PageProps) {
         <div className="span-4 side-stack">
           <WeatherPanel />
           <AgendaPanel />
+          <TasksPanel csrfToken={props.csrfToken} />
         </div>
         <SportWidget />
         <EconomySummary />

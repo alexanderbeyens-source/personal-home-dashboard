@@ -398,6 +398,32 @@ export interface SportDetail {
   warnings: SportWarning[];
 }
 
+export interface TaskItem {
+  id: string;
+  text: string;
+  done: boolean;
+  doneDate: string | null;
+  due: string | null;
+  overdue: boolean;
+}
+
+export interface TaskSection {
+  id: "daily" | "weekly" | "monthly" | "once";
+  title: string;
+  period: string;
+  items: TaskItem[];
+}
+
+export interface TasksData {
+  today: string;
+  sections: TaskSection[];
+  overdue: number;
+  open: number;
+  total: number;
+  stale: boolean;
+  updatedAt: string;
+}
+
 export type ImieRange = "1d" | "5d" | "1m" | "3m" | "6m" | "ytd" | "1y" | "3y" | "5y" | "10y";
 
 export interface ImieHistory {
