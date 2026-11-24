@@ -38,7 +38,7 @@ describe("official economic data loaders", () => {
       value: 2.75,
       period: "2026-02-01",
       lastChangeDate: "2026-02-01",
-      source: "European Central Bank",
+      source: "Europese Centrale Bank",
     });
     expect(refinancing.value).toBe(2.9);
     expect(lending.value).toBe(3.15);
@@ -80,15 +80,15 @@ describe("official economic data loaders", () => {
     expect(worldGrowth).toMatchObject({
       value: 2.9,
       period: "2025",
-      unit: "% y/y",
-      source: "World Bank · World Development Indicators",
+      unit: "% j/j",
+      source: "Wereldbank · World Development Indicators",
       sourceUpdatedAt: "2026-11-11",
     });
     expect(belgium).toMatchObject({
       value: 2.6,
       period: "2025-12",
       change: 0.2,
-      unit: "% y/y",
+      unit: "% j/j",
       source: "Eurostat · HICP",
       observationStale: true,
     });
@@ -96,12 +96,12 @@ describe("official economic data loaders", () => {
     expect(mortgage).toMatchObject({
       value: 3.4,
       unit: "%",
-      disclaimer: expect.stringContaining("not a personal bank offer"),
+      disclaimer: expect.stringContaining("geen persoonlijke bankofferte"),
     });
     expect(electricity).toMatchObject({
       value: 0.36,
       unit: "EUR/kWh",
-      consumptionBand: "2,500-4,999 kWh/year household band",
+      consumptionBand: "verbruiksklasse 2.500-4.999 kWh/jaar",
     });
     expect(gas.value).toBe(0.085);
     expect(fetchJson.mock.calls.map(([url]) => url)).toEqual(expect.arrayContaining([
@@ -125,7 +125,7 @@ describe("official economic data loaders", () => {
       value: 10.97,
       unit: "EUR",
       period: "2026-11-20",
-      priceType: "Official issuer closing price",
+      priceType: "Officiële slotkoers van de uitgever",
       source: "State Street Global Advisors · SPDR",
     });
   });
@@ -159,7 +159,7 @@ describe("economic source cache", () => {
     expect(cachedFailure.belgiumInflation).toMatchObject({ value: 1, stale: true });
     expect(loaders.belgiumInflation).toHaveBeenCalledTimes(2);
     expect(refreshed.warnings).toContainEqual({
-      source: "Belgian HICP",
+      source: "Belgische HICP",
       message: "Eurostat unavailable",
       stale: true,
     });

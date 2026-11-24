@@ -84,7 +84,7 @@ describe("NBA data loading", () => {
         url: "https://www.espn.com/nba/player/_/id/1",
       },
     ]);
-    expect(result.warnings).toContain("Some featured player profiles are temporarily unavailable.");
+    expect(result.warnings).toContain("Sommige spelersprofielen zijn tijdelijk niet beschikbaar.");
   });
 
   it("reports a scoreboard failure rather than returning success-shaped empty data", async () => {
@@ -107,7 +107,7 @@ describe("NBA data loading", () => {
 
     expect(result.events).toHaveLength(1);
     expect(result.news).toEqual([]);
-    expect(result.warnings).toContain("NBA headlines are temporarily unavailable.");
+    expect(result.warnings).toContain("NBA-nieuws is tijdelijk niet beschikbaar.");
   });
 });
 
@@ -126,8 +126,8 @@ describe("mapSportsEvents", () => {
     expect(incomplete).toMatchObject({
       date: "",
       state: null,
-      status: "Status unavailable",
-      shortStatus: "Status unavailable",
+      status: "Status niet beschikbaar",
+      shortStatus: "Status niet beschikbaar",
       competitors: [],
     });
   });

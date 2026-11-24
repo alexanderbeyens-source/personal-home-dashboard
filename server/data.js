@@ -29,8 +29,8 @@ export function mapSportsEvents(payload) {
       name: event.name,
       date: typeof event.date === "string" ? event.date : "",
       state,
-      status: event.status?.type?.description ?? "Status unavailable",
-      shortStatus: event.status?.type?.shortDetail ?? event.status?.type?.detail ?? "Status unavailable",
+      status: event.status?.type?.description ?? "Status niet beschikbaar",
+      shortStatus: event.status?.type?.shortDetail ?? event.status?.type?.detail ?? "Status niet beschikbaar",
       competitors: (competition?.competitors ?? []).map((competitor) => ({
         name: competitor.team?.displayName ?? competitor.team?.name ?? "Team",
         abbreviation: competitor.team?.abbreviation ?? "—",
@@ -57,7 +57,7 @@ export async function loadNbaData(fetchJson, fetchNews = async () => ({
 
   const warnings = [];
   if (newsResult.status === "rejected") {
-    warnings.push("NBA headlines are temporarily unavailable.");
+    warnings.push("NBA-nieuws is tijdelijk niet beschikbaar.");
   } else {
     warnings.push(...(newsResult.value.warnings ?? []));
   }
@@ -79,7 +79,7 @@ export async function loadNbaPlayers(fetchJson) {
   const warnings = [];
   const rosterPlayers = rosterResults.map((result, index) => {
     if (result.status === "rejected") {
-      warnings.push("Some featured player profiles are temporarily unavailable.");
+      warnings.push("Sommige spelersprofielen zijn tijdelijk niet beschikbaar.");
       return null;
     }
     const roster = result.value;
@@ -92,7 +92,7 @@ export async function loadNbaPlayers(fetchJson) {
     );
     const profile = athlete?.links?.find((link) => link.rel?.includes("playercard"))?.href;
     if (!athlete || !profile || !roster.team?.displayName) {
-      warnings.push("Some featured player profiles are temporarily unavailable.");
+      warnings.push("Sommige spelersprofielen zijn tijdelijk niet beschikbaar.");
       return null;
     }
     return { name, team: roster.team.displayName, url: profile };

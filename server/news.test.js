@@ -327,7 +327,7 @@ describe("news service caching, isolation, and filters", () => {
 
     expect(response.articles).toEqual([]);
     expect(response.warnings).toMatchObject([
-      { sourceId: "unknown", message: expect.stringContaining("unknown language metadata") },
+      { sourceId: "unknown", message: expect.stringContaining("zonder bekende taal") },
     ]);
   });
 

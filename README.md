@@ -1,6 +1,6 @@
 # Northstar · Personal Home Dashboard
 
-A responsive personal dashboard for live weather, headlines, sports scores, daily reference exchange rates, and optional calendar/Home Assistant connections.
+A responsive personal dashboard for live weather, headlines, sports scores, daily reference exchange rates, and optional calendar/Home Assistant connections. The user interface is in Dutch (`nl-BE` date formatting; numbers still use a decimal point); news articles are shown in their original language.
 
 ## Run locally
 
