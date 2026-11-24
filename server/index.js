@@ -12,6 +12,7 @@ import { createEconomicLoaders, createEconomicsService } from "./economics.js";
 import { createNewsService, isAllowedFeedContentType } from "./news.js";
 import { calendarsFromEnv, createCalendarService, isCalendarConfigured } from "./calendar.js";
 import { createSportsService } from "./sports.js";
+import { WEATHER_CURRENT, WEATHER_DAILY, WEATHER_HOURLY, mapForecast } from "./weather.js";
 
 const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
 
@@ -421,7 +422,7 @@ async function getHomeAssistant() {
 const apiRouteCache = new Map();
 const apiRouteInFlight = new Map();
 const sharedApiRouteTtl = new Map([
-  ["/api/weather", 5 * 60 * 1000],
+  ["/api/weather", 15 * 60 * 1000],
   ["/api/finance", 60 * 60 * 1000],
   ["/api/home-assistant", 5 * 60 * 1000],
   ["/api/projects", 30 * 60 * 1000],
@@ -518,19 +519,13 @@ async function routeApiUncached(url) {
     const query = new URLSearchParams({
       latitude: String(latitude),
       longitude: String(longitude),
-      current: "temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m",
+      current: WEATHER_CURRENT,
+      hourly: WEATHER_HOURLY,
+      daily: WEATHER_DAILY,
+      forecast_days: "7",
       timezone: "auto",
     });
-    const payload = await fetchJson(`https://api.open-meteo.com/v1/forecast?${query}`);
-    return {
-      location,
-      temperature: payload.current.temperature_2m,
-      apparentTemperature: payload.current.apparent_temperature,
-      humidity: payload.current.relative_humidity_2m,
-      windSpeed: payload.current.wind_speed_10m,
-      weatherCode: payload.current.weather_code,
-      isDay: Boolean(payload.current.is_day),
-    };
+    return mapForecast(await fetchJson(`https://api.open-meteo.com/v1/forecast?${query}`), location);
   }
 
   if (url.pathname === "/api/news") {

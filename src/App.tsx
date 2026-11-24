@@ -7,6 +7,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { EconomyPage } from "./pages/EconomyPage";
 import { NewsPage } from "./pages/NewsPage";
 import { SportPage } from "./pages/SportPage";
+import { WeatherPage } from "./pages/WeatherPage";
 
 type AccessState =
   | { status: "loading" }
@@ -33,6 +34,7 @@ function Page(props: PageProps) {
   if (path === "/news" || path === "/nieuws") return <NewsPage {...props} />;
   if (path === "/sport" || path.startsWith("/sport/")) return <SportPage {...props} />;
   if (path === "/economie") return <EconomyPage {...props} />;
+  if (path === "/weer") return <WeatherPage {...props} />;
   return <Dashboard {...props} />;
 }
 

@@ -192,3 +192,40 @@ describe("Agenda widget", () => {
     expect(within(panel).getByRole("link", { name: /Volledige agenda/ }).getAttribute("href")).toBe("/agenda");
   });
 });
+
+describe("Weather widget", () => {
+  beforeEach(() => window.history.replaceState(null, "", "/"));
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows dayparts, the next days and a link to the weather page", async () => {
+    const day = (date: string, max: number) => ({
+      date, weatherCode: 3, temperatureMax: max, temperatureMin: -1, precipitationSum: 0, precipitationProbabilityMax: 20,
+      sunrise: `${date}T08:10`, sunset: `${date}T16:42`, uvIndexMax: 1, windSpeedMax: 12,
+    });
+    mockApi({
+      "/api/weather": () => jsonResponse({
+        location: "Diest", temperature: 1, apparentTemperature: -3, humidity: 74, windSpeed: 6, weatherCode: 2, isDay: true,
+        observedAt: "2026-11-24T11:15",
+        today: day("2026-11-24", 4),
+        dayparts: [
+          { id: "morning", label: "Ochtend", from: 6, to: 12, averageTemperature: 0.4, weatherCode: 45, precipitationProbabilityMax: 0, status: "current" },
+          { id: "afternoon", label: "Middag", from: 12, to: 18, averageTemperature: 3.2, weatherCode: 3, precipitationProbabilityMax: 10, status: "upcoming" },
+          { id: "evening", label: "Avond", from: 18, to: 24, averageTemperature: null, weatherCode: null, precipitationProbabilityMax: null, status: "upcoming" },
+        ],
+        nextDays: [day("2026-11-25", 2), day("2026-11-26", 5), day("2026-11-27", 6)],
+        days: [], hours: [],
+      }),
+    });
+    render(<App />);
+
+    const panel = (await screen.findByRole("heading", { name: "Weer" })).closest("section") as HTMLElement;
+    await within(panel).findByText("Ochtend");
+    expect(within(panel).getByText("3°")).toBeTruthy();
+    expect(within(panel).getAllByText("—").length).toBeGreaterThan(0);
+    expect(within(panel).getByText("Morgen")).toBeTruthy();
+    expect(within(panel).getByRole("link", { name: /Weerdetails/ }).getAttribute("href")).toBe("/weer");
+  });
+});

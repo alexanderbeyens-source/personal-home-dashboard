@@ -6,7 +6,8 @@ import { ImieCard, MetricCard, PolicyRateCard } from "../components/economy";
 import { Icon } from "../components/Icon";
 import { Panel, ResourceState, SectionTitle } from "../components/Panel";
 import { FixtureList, LeagueTabs, PlayerLines, StandingsTable, isLeagueId, leagueLabel } from "../components/sports";
-import { LOCALE, formatNumber, formatTime, weatherLabel } from "../format";
+import { LOCALE, formatNumber, formatTemperature, formatTime, weatherIcon, weatherLabel } from "../format";
+import { DayList, Dayparts } from "../components/weather";
 import { useLiveResource } from "../hooks/useLiveResource";
 import type {
   CalendarData,
@@ -56,27 +57,42 @@ function BriefingSummary() {
 }
 
 function WeatherPanel() {
-  const weather = useLiveResource<WeatherData>("/api/weather", 20 * 60 * 1000, "/api/weather?refresh=1");
+  const weather = useLiveResource<WeatherData>("/api/weather", 15 * 60 * 1000, "/api/weather?refresh=1");
   const data = weather.data;
+  const today = data?.observedAt?.slice(0, 10) ?? "";
   return (
-    <Panel title="Weer" eyebrow={data?.location ?? "Locatie"} icon={data && data.weatherCode < 4 ? "sun" : "cloud"} className="weather-panel" resource={weather}>
+    <Panel
+      title="Weer"
+      eyebrow={data?.location ?? "Locatie"}
+      icon={data ? weatherIcon(data.weatherCode, data.isDay) : "cloud"}
+      className="weather-panel"
+      resource={weather}
+      moreHref="/weer"
+      moreLabel="Weerdetails"
+    >
       {data ? (
-        <div className="weather">
-          <p className="weather-temp">{Math.round(data.temperature)}°</p>
-          <div>
-            <p className="weather-label">{weatherLabel(data.weatherCode, data.isDay)}</p>
-            <p className="weather-detail">Voelt als {Math.round(data.apparentTemperature)}°</p>
-            <p className="weather-detail">
-              <Icon name="wind" size={15} className="inline-icon" /> {Math.round(data.windSpeed)} km/u
-              <span aria-hidden="true"> · </span>
-              <Icon name="drop" size={14} className="inline-icon" /> {data.humidity}%
-            </p>
+        <>
+          <div className="weather">
+            <p className="weather-temp">{Math.round(data.temperature)}°</p>
+            <div>
+              <p className="weather-label">{weatherLabel(data.weatherCode, data.isDay)}</p>
+              <p className="weather-detail">
+                Voelt als {Math.round(data.apparentTemperature)}°
+                {data.today && <> · vandaag {formatTemperature(data.today.temperatureMin)} tot {formatTemperature(data.today.temperatureMax)}</>}
+              </p>
+              <p className="weather-detail">
+                <Icon name="wind" size={15} className="inline-icon" /> {Math.round(data.windSpeed)} km/u
+                <span aria-hidden="true"> · </span>
+                <Icon name="drop" size={14} className="inline-icon" /> {data.humidity}%
+              </p>
+            </div>
           </div>
-        </div>
+          {data.dayparts && data.dayparts.length > 0 && <Dayparts parts={data.dayparts} />}
+          {data.nextDays && data.nextDays.length > 0 && <DayList days={data.nextDays} today={today} />}
+        </>
       ) : (
         <ResourceState loading={weather.loading} empty="Weergegevens zijn momenteel niet beschikbaar." />
       )}
-      <p className="panel-source">Open-Meteo</p>
     </Panel>
   );
 }
