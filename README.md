@@ -48,7 +48,7 @@ Do not make the service public without authentication. All API routes require th
 
 ## Pages
 
-`/` overview (briefing top 3, weather, agenda, sport and economy summaries) · `/briefing` full daily briefing · `/news` news centre · `/sport/<league>` full standings, fixtures, news and player lines · `/economie` full economic cockpit. The server falls back to `index.html` for these paths.
+`/` overview (briefing top 3, weather, agenda, sport and economy summaries) · `/briefing` full daily briefing · `/news` news centre · `/sport/<league>` full standings, fixtures, news and player lines · `/economie` full economic cockpit · `/gezondheid` health data. The server falls back to `index.html` for these paths.
 
 ## Live data and integrations
 
@@ -64,6 +64,14 @@ Do not make the service public without authentication. All API routes require th
 - Projects: set `PROJECTS_JSON`, for example `[{\"name\":\"Portfolio\",\"url\":\"https://example.com\",\"description\":\"Personal site\"}]`.
 
 The calendar and Home Assistant cards show a connection state until configured. No fake/sample headlines, scores, events, or balances are used. Providers can rate-limit or change their public endpoints, so unavailable live sources are shown as errors rather than replaced with sample values.
+
+## Health data (Garmin via intervals.icu)
+
+Garmin's official Health API is only available to businesses, and Apple Health has no web API, so Northstar reads Garmin data through [intervals.icu](https://intervals.icu/) (free), which syncs with Garmin Connect.
+
+- Data: per day sleep duration, sleep score, resting heart rate, HRV and steps for the last 14 days (`/api/v1/athlete/{id}/wellness`), plus the latest activities of the last 30 days (`/activities`). Field names follow intervals.icu's OpenAPI spec. Values that are missing or zero are shown as "niet beschikbaar", never as 0. Cached 30 minutes with last-known-good fallback; if one of the two calls fails, the other still shows.
+- Setup: create an intervals.icu account, connect Garmin in its settings with wellness sync enabled, create an API key under *Settings → Developer settings*, and set `INTERVALS_ATHLETE_ID` (e.g. `i12345`) and `INTERVALS_API_KEY` in Render. The key is sent only to intervals.icu (HTTP basic auth, username `API_KEY`) and never reaches the browser. If only some wellness fields arrive, reconnecting Garmin in intervals.icu usually helps.
+- Apple Health was evaluated and not implemented: it would need a paid forwarding app on the iPhone plus persistent storage, which Northstar does not have.
 
 ## Mobility & Home · Phase 3 assessment
 

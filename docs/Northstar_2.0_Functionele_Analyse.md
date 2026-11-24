@@ -932,6 +932,22 @@ Huidige beslissing: niet integreren totdat een veilige, stabiele, gratis
 en rechtstreekse koppeling zonder Home Assistant aantoonbaar beschikbaar
 is.
 
+Heronderzoek 2026-11-24 (gebruiker noemde een "L50 Pro Ultra"; deze
+spec noemt de L50s Pro Ultra):
+
+- Matter-ondersteuning is gemeld voor de L50s Pro Ultra (Notebookcheck,
+  maart 2026), niet bevestigd voor de L50 Pro Ultra.
+- Matter werkt uitsluitend lokaal op het thuisnetwerk. Een op Render
+  gehoste Northstar kan de robot daardoor niet rechtstreeks bereiken;
+  er is een lokale hub nodig (Home Assistant of Homey) plus beveiligde
+  toegang van buitenaf. Dat is nieuwe infrastructuur en botst met §14.4.
+- De Home Assistant-community-integratie `dreame-vacuum` gebruikt de
+  Dreame-cloud met de accountgegevens van de gebruiker; geen officiële
+  publieke API.
+- Besluit blijft: niet integreren. Mogelijke latere route als de
+  gebruiker alsnog een lokale hub wil: Matter → Home Assistant → de
+  bestaande `HOME_ASSISTANT_*`-koppeling van Northstar.
+
 ## 14.2 Mercedes
 
 Voertuig: Mercedes-Benz CLA 250+, modeljaar 2026. De gebruiker gebruikt

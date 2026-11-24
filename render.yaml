@@ -37,3 +37,7 @@ services:
         sync: false
       - key: PROJECTS_JSON
         sync: false
+      - key: INTERVALS_ATHLETE_ID
+        sync: false
+      - key: INTERVALS_API_KEY
+        sync: false

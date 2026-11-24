@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell, type PageProps } from "../components/AppShell";
 import { CompactStory } from "../components/briefing";
 import { ImieCard, MetricCard, PolicyRateCard } from "../components/economy";
+import { HealthPanel } from "../components/HealthPanel";
 import { Icon } from "../components/Icon";
 import { Panel, ResourceState, SectionTitle } from "../components/Panel";
 import { FixtureList, LeagueTabs, PlayerLines, StandingsTable, isLeagueId, leagueLabel } from "../components/sports";
@@ -274,6 +275,7 @@ export function Dashboard(props: PageProps) {
         </div>
         <SportWidget />
         <EconomySummary />
+        <HealthPanel />
         <OptionalPanels />
       </div>
     </AppShell>

@@ -161,3 +161,43 @@ describe("Dashboard widgets", () => {
     expect(screen.queryByText(/^live$/i)).toBeNull();
   });
 });
+
+describe("Health widget", () => {
+  beforeEach(() => window.history.replaceState(null, "", "/"));
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows the latest values, never shows missing values as zero, and lists the last activity", async () => {
+    const day = (date: string, values: Partial<Record<string, number | null>>) => ({
+      date, sleepSeconds: null, sleepScore: null, restingHr: null, hrv: null, steps: null,
+      avgSleepingHr: null, readiness: null, spO2: null, respiration: null, weight: null, ...values,
+    });
+    mockApi({
+      "/api/health": () => jsonResponse({
+        today: "2026-11-24",
+        days: [day("2026-11-23", { sleepSeconds: 24000, restingHr: 54 }), day("2026-11-24", { sleepSeconds: 26100, restingHr: 52 })],
+        summary: {
+          sleepSeconds: { value: 26100, date: "2026-11-24", average7d: null },
+          sleepScore: { value: null, date: null, average7d: null },
+          restingHr: { value: 52, date: "2026-11-24", average7d: 53 },
+          hrv: { value: null, date: null, average7d: null },
+          steps: { value: null, date: null, average7d: null },
+        },
+        activities: [{ id: "i1", name: "Ochtendloop", type: "Run", start: "2026-11-23T07:10:00", movingSeconds: 1800, distanceMeters: 5200, averageHr: 148, calories: null, trainingLoad: 42 }],
+        stale: false,
+        warnings: [],
+        source: "Garmin via intervals.icu",
+        sourceUrl: "https://intervals.icu/",
+      }),
+    });
+    render(<App />);
+    const panel = (await screen.findByRole("heading", { name: "Gezondheid" })).closest("section") as HTMLElement;
+    expect(await within(panel).findByText("7 u 15")).toBeTruthy();
+    expect(within(panel).getByText(/gem\. 7 d 53/)).toBeTruthy();
+    expect(within(panel).getAllByText("Niet beschikbaar")).toHaveLength(2);
+    expect(within(panel).getByText("Ochtendloop")).toBeTruthy();
+    expect(within(panel).getByText(/Lopen · 30 min · 5,2 km · gem\. 148 bpm/)).toBeTruthy();
+  });
+});
