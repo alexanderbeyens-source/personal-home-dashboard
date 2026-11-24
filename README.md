@@ -63,7 +63,7 @@ The calendar and Home Assistant cards show a connection state until configured. 
 
 ## Mobility & Home · Phase 3 assessment
 
-The authenticated `/mobility` page is an integration-availability assessment, not a live device dashboard. It does not contact either account or display simulated device states. No device adapter or credential variable has been added because neither option meets the current requirements for a safe, supported, no-cost, independently verifiable integration.
+This section records an integration-availability assessment only. Per the functional analysis (section 4 and 13.6), Mobility & Home is not part of the user interface: the former `/mobility` page has been removed and no device data is contacted or simulated. No device adapter or credential variable has been added because neither option meets the current requirements for a safe, supported, no-cost, independently verifiable integration.
 
 | Area | Mercedes-Benz CLA 250+ (2026, Europe) | Dreame L50s Pro Ultra |
 | --- | --- | --- |
@@ -83,7 +83,7 @@ Research references, checked 23 November 2026:
 - [Dreame community account setup](https://dv.tasshack.com/configuration/dreamehome) requires the Dreamehome app username/password, email-based account and matching device region.
 - [Dreame community integration source](https://github.com/Tasshack/dreame-vacuum) is a Home Assistant integration, not a standalone Northstar API.
 
-No mobility-related environment variables are required. No Mercedes or Dreame credentials are stored. The page can be removed by removing the `/mobility` route and its navigation links; there is no background job, persistent state or external connection to disable.
+No mobility-related environment variables are required. No Mercedes or Dreame credentials are stored, and there is no background job, persistent state or external connection.
 
 Keep `.env` private and never commit real calendar URLs, Home Assistant tokens, or other credentials.
 

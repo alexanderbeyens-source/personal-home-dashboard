@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon } from "./components/Icon";
 import { Panel, ResourceState } from "./components/Panel";
 import { useLiveResource } from "./hooks/useLiveResource";
-import { MobilityHomePage } from "./MobilityHomePage";
 import type {
   CalendarData,
   DailyBriefing,
@@ -580,7 +579,6 @@ function NewsCenter({
         </a>
         <div className="topbar-right">
           <a className="news-home-link" href="/">Dashboard</a>
-          <a className="news-home-link" href="/mobility">Mobility &amp; Home</a>
           <span className="account-name">{user.name || "Signed in"}</span>
           <button className="sign-out-button" onClick={() => onSignOut(csrfToken)}>Sign out</button>
         </div>
@@ -882,7 +880,6 @@ function Dashboard({
           <div className="connection-status"><span className="status-pulse" /> PUBLIC FEEDS</div>
           <div className="topbar-divider" />
           <span className="topbar-date">{date}</span>
-          <a className="news-home-link" href="/mobility">Mobility &amp; Home</a>
           <span className="account-name">{user.name || "Signed in"}</span>
           <button className="sign-out-button" onClick={() => onSignOut(csrfToken)}>Sign out</button>
         </div>
@@ -1116,7 +1113,6 @@ function App() {
   };
   const path = window.location.pathname.replace(/\/+$/, "");
   if (path === "/news") return <NewsCenter {...pageProps} />;
-  if (path === "/mobility") return <MobilityHomePage {...pageProps} />;
   return <Dashboard {...pageProps} />;
 }
 
