@@ -54,7 +54,7 @@ Domain logic lives in separate, unit-tested modules built as factories with inje
 - `briefing.js` — `composeDailyBriefing` combines news, sports, economics, calendar, weather into an extractive, deterministic briefing (15-min cache). No LLM/AI API.
 - `data.js` — ESPN sports mapping.
 
-Outbound fetches go through `fetchJson`/`fetchText`/`readLimitedBody` in `index.js` (timeouts and response size limits) — reuse them for new sources. Failures are logged only as a fixed classification (`kind=http status=503`, `kind=timeout`, `kind=network code=ENOTFOUND`, …) with a fixed label: never log `error.message`, `error.input` or URLs, because calendar links and tokens are secrets. Tag errors you throw with `upstreamError(message, { status | kind })`.
+Outbound fetches go through `fetchJson`/`fetchText`/`readLimitedBody` in `index.js` (timeouts and response size limits) — reuse them for new sources. Failures are logged only as a fixed classification (`kind=http status=503`, `kind=timeout`, `kind=network code=ENOTFOUND`, …) with a fixed label: never log `error.message`, `error.input` or URLs, because calendar links and tokens are secrets. Tag errors you throw with `upstreamError(message, { status | kind })`. Configuration errors use `code: "invalid_config"` plus a fixed `reason`; their message is fixed text and is shown to the owner.
 
 `server/security.test.js` spawns the real server on a random port with dummy auth env and asserts API routes are protected; keep it passing when touching request handling.
 

@@ -840,6 +840,12 @@ function sendApiError(response, pathname, error) {
   if (error.code === "not_configured") {
     return sendJson(response, status, { error: error.message, code: "not_configured" });
   }
+  if (error.code === "invalid_config") {
+    // Messages of configuration errors are fixed text (plus a calendar number) and never
+    // contain configured values, so they can be shown to the signed-in owner.
+    logFetchFailure("API request", pathname, error);
+    return sendJson(response, status, { error: error.message, code: "invalid_config" });
+  }
   if (status >= 500) {
     logFetchFailure("API request", pathname, error);
     return sendJson(response, status, { error: "Live gegevens zijn tijdelijk niet beschikbaar." });

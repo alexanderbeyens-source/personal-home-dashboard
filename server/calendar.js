@@ -8,10 +8,39 @@ const MAX_ITERATIONS = 40000;
 const MAX_EVENTS = 200;
 const DEFAULT_COLORS = ["#ff6a1a", "#4f8cff", "#b06cff", "#ff4d8d", "#3ccfcf", "#e8e8e8"];
 
-function configError(message) {
+// Configuration errors carry a short machine reason for the logs ("invalid-json",
+// "invalid-url:2", ...) and a Dutch message that is safe to show: both are fixed text
+// plus at most a calendar number, never a URL or any part of the configured value.
+function configError(message, reason) {
   const error = new Error(message);
   error.status = 500;
+  error.kind = "config";
+  error.code = "invalid_config";
+  error.reason = reason;
   return error;
+}
+
+const SMART_QUOTES = /[\u201C\u201D\u201E\u2018\u2019\u00AB\u00BB]/;
+
+function parseCalendarList(raw) {
+  const text = String(raw).trim();
+  if (SMART_QUOTES.test(text)) {
+    throw configError("De agendaconfiguratie bevat gekrulde aanhalingstekens (\u201C \u201D). Gebruik gewone rechte aanhalingstekens (\").", "smart-quotes");
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    const quoted = /^(['"])([\s\S]*)\1$/.exec(text);
+    if (quoted) {
+      try {
+        JSON.parse(quoted[2]);
+        throw configError("De agendaconfiguratie staat tussen extra aanhalingstekens. Verwijder de aanhalingstekens rond de hele waarde.", "quoted");
+      } catch (error) {
+        if (error.code === "invalid_config") throw error;
+      }
+    }
+    throw configError("De agendaconfiguratie is geen geldige JSON.", "invalid-json");
+  }
 }
 
 export function normalizeCalendarUrl(value) {
@@ -29,22 +58,28 @@ export function normalizeCalendarUrl(value) {
 // supported as a single calendar. Error messages never contain the URLs.
 export function calendarsFromEnv(env) {
   if (env.CALENDAR_ICS_URLS) {
-    let parsed;
-    try {
-      parsed = JSON.parse(env.CALENDAR_ICS_URLS);
-    } catch {
-      throw configError("De agendaconfiguratie is geen geldige JSON.");
+    const parsed = parseCalendarList(env.CALENDAR_ICS_URLS);
+    if (!Array.isArray(parsed)) {
+      throw configError("De agendaconfiguratie moet een lijst zijn: zet [ en ] rond de agenda's.", "not-a-list");
     }
-    if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 12) {
-      throw configError("De agendaconfiguratie moet een lijst van 1 tot 12 agenda's zijn.");
+    if (parsed.length === 0 || parsed.length > 12) {
+      throw configError("De agendaconfiguratie moet 1 tot 12 agenda's bevatten.", "list-size");
     }
+    parsed.forEach((entry, index) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        throw configError(`Agenda ${index + 1} is geen object met "name" en "url".`, `invalid-entry:${index + 1}`);
+      }
+      if (!("url" in entry)) {
+        throw configError(`Agenda ${index + 1} heeft geen "url"-veld.`, `missing-url:${index + 1}`);
+      }
+    });
     const validColor = (value) => typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
     const used = new Set(parsed.map((entry) => (validColor(entry?.color) ? entry.color.toLowerCase() : null)).filter(Boolean));
     const spare = DEFAULT_COLORS.filter((color) => !used.has(color.toLowerCase()));
     let spareIndex = 0;
     return parsed.map((entry, index) => {
       const url = normalizeCalendarUrl(entry?.url);
-      if (!url) throw configError(`Agenda ${index + 1} heeft geen geldige https- of webcal-link.`);
+      if (!url) throw configError(`Agenda ${index + 1} heeft geen geldige https- of webcal-link.`, `invalid-url:${index + 1}`);
       const name = typeof entry.name === "string" && entry.name.trim() ? entry.name.trim().slice(0, 40) : `Agenda ${index + 1}`;
       const color = validColor(entry.color) ? entry.color : (spare[spareIndex++ % Math.max(1, spare.length)] ?? DEFAULT_COLORS[index % DEFAULT_COLORS.length]);
       return { id: `cal-${index + 1}`, name, color, url };
@@ -52,7 +87,7 @@ export function calendarsFromEnv(env) {
   }
   if (env.CALENDAR_ICS_URL) {
     const url = normalizeCalendarUrl(env.CALENDAR_ICS_URL);
-    if (!url) throw configError("De agendalink is geen geldige https- of webcal-link.");
+    if (!url) throw configError("De agendalink is geen geldige https- of webcal-link.", "invalid-url:1");
     return [{ id: "cal-1", name: "Agenda", color: DEFAULT_COLORS[0], url }];
   }
   return [];

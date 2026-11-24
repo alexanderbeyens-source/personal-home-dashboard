@@ -11,13 +11,14 @@
 //   kind=size                     response exceeded our size limit
 //   kind=invalid-response         redirect, content type, empty body or malformed JSON
 //   kind=parse                    the body could not be parsed into data
-//   kind=config                   our own configuration is invalid
+//   kind=config reason=invalid-json  our own configuration is invalid (reason is a fixed code)
 //   kind=unknown name=RangeError  anything else; only the error class name
 
 export const ERROR_KINDS = ["http", "timeout", "network", "size", "invalid-response", "parse", "config", "unknown"];
 
 const SAFE_CODE = /^[A-Z][A-Z0-9_]{1,47}$/;
 const SAFE_NAME = /^[A-Za-z][A-Za-z0-9]{0,47}$/;
+const SAFE_REASON = /^[a-z][a-z-]{0,23}(?::\d{1,2})?$/;
 
 // Creates an error for a failed upstream request. `status` is the upstream HTTP status;
 // it is stored separately from `error.status`, which the API layer uses for its own response.
@@ -51,6 +52,7 @@ export function classifyFetchError(error) {
   if (error && ERROR_KINDS.includes(error.kind)) {
     const status = Number.isInteger(error.upstreamStatus) ? error.upstreamStatus : null;
     if (error.kind === "network") return { kind: "network", code: networkCode(error) };
+    if (error.kind === "config") return { kind: "config", reason: typeof error.reason === "string" && SAFE_REASON.test(error.reason) ? error.reason : null };
     return status !== null ? { kind: error.kind, status } : { kind: error.kind };
   }
   if (Number.isInteger(error?.upstreamStatus)) return { kind: "http", status: error.upstreamStatus };

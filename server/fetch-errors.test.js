@@ -59,6 +59,13 @@ describe("fetch error classification", () => {
     expect(formatFetchError(new SyntaxError(`Unexpected token in ${SECRET_URL}`))).toBe("kind=parse");
   });
 
+  it("adds the fixed reason of configuration errors and drops anything else", () => {
+    const config = Object.assign(new Error("x"), { kind: "config", reason: "invalid-url:2" });
+    expect(formatFetchError(config)).toBe("kind=config reason=invalid-url:2");
+    const unsafe = Object.assign(new Error("x"), { kind: "config", reason: `invalid ${SECRET_URL}` });
+    expect(formatFetchError(unsafe)).toBe("kind=config");
+  });
+
   it("logs a fixed label and replaces anything that looks unsafe", () => {
     const log = vi.fn();
     logFetchFailure("News source", "de-tijd", upstreamError("x", { status: 500 }), log);
