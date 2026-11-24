@@ -10,6 +10,7 @@ import { createDailyBriefingService } from "./briefing.js";
 import { loadNbaData, loadNbaPlayers, mapSportsEvents } from "./data.js";
 import { createEconomicLoaders, createEconomicsService } from "./economics.js";
 import { createNewsService, isAllowedFeedContentType } from "./news.js";
+import { calendarsFromEnv, createCalendarService, isCalendarConfigured } from "./calendar.js";
 import { createSportsService } from "./sports.js";
 import { WEATHER_CURRENT, WEATHER_DAILY, WEATHER_HOURLY, mapForecast } from "./weather.js";
 
@@ -285,6 +286,36 @@ async function readLimitedBody(response, maxBytes) {
   return Buffer.concat(chunks, totalBytes).toString("utf8");
 }
 
+// Calendar feeds can be large; limit size and only follow https redirects. The URL
+// itself is a secret and is never included in errors.
+async function fetchCalendarText(url) {
+  let currentUrl = new URL(url);
+  for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
+    const response = await fetch(currentUrl, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(15000),
+      headers: { accept: "text/calendar, */*", "user-agent": "NorthstarHomeDashboard/0.1" },
+    });
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      const location = response.headers.get("location");
+      await response.body?.cancel();
+      if (!location || redirectCount === 3) throw new Error("Agenda gaf een ongeldige doorverwijzing.");
+      const next = new URL(location, currentUrl);
+      if (next.protocol !== "https:" || next.username || next.password) throw new Error("Agenda verwees naar een onveilige link.");
+      currentUrl = next;
+      continue;
+    }
+    if (!response.ok) throw new Error(`Agenda gaf status ${response.status}.`);
+    return readLimitedBody(response, 5 * 1024 * 1024);
+  }
+  throw new Error("Agenda overschreed het aantal doorverwijzingen.");
+}
+
+const calendarService = createCalendarService({
+  fetchText: fetchCalendarText,
+  getCalendars: () => calendarsFromEnv(process.env),
+});
+
 async function fetchNewsContent(source, expectJson) {
   const initialUrl = new URL(source.url);
   if (initialUrl.protocol !== "https:" || initialUrl.username || initialUrl.password) {
@@ -336,68 +367,6 @@ const newsService = createNewsService({
   fetchJson: (source) => fetchNewsContent(source, true),
   onSourceError: (source, error) => console.error("News source failed:", source.id, error.name),
 });
-
-function parseCalendar(ics) {
-  const events = [...ics.matchAll(/BEGIN:VEVENT([\s\S]*?)END:VEVENT/g)]
-    .map(([_, block]) => {
-      const fields = {};
-      for (const line of block.replace(/\r?\n[ \t]/g, "").split(/\r?\n/)) {
-        const match = line.match(/^([A-Z-]+)((?:;[^:]+)*):([\s\S]*)$/);
-        if (!match) continue;
-        const [, key, parameters, value] = match;
-        fields[key] = { value, timezone: parameters.match(/;TZID=([^;]+)/)?.[1] ?? null };
-      }
-      const start = fields.DTSTART;
-      if (!start) return null;
-      const parsed = parseCalendarDate(start.value, start.timezone);
-      return {
-        title: (fields.SUMMARY?.value || "Calendar event").replace(/\\([,;\\])/g, "$1").replace(/\\n/gi, " "),
-        start: parsed.toISOString(),
-        location: fields.LOCATION?.value.replace(/\\([,;\\])/g, "$1") || null,
-      };
-    })
-    .filter((event) => event && new Date(event.start).getTime() >= Date.now() - 60 * 60 * 1000)
-    .sort((a, b) => new Date(a.start) - new Date(b.start))
-    .slice(0, 8);
-  return { events };
-}
-
-function parseCalendarDate(value, timezone) {
-  if (/^\d{8}$/.test(value)) {
-    return new Date(Date.UTC(+value.slice(0, 4), +value.slice(4, 6) - 1, +value.slice(6, 8)));
-  }
-  const match = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/);
-  if (!match) throw new Error("Calendar contains an unsupported event date.");
-  const [, year, month, day, hour, minute, second, utc] = match;
-  const localParts = [+year, +month - 1, +day, +hour, +minute, +second];
-  if (utc || !timezone) return new Date(Date.UTC(...localParts));
-  let timestamp = Date.UTC(...localParts);
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  });
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const parts = Object.fromEntries(
-      formatter.formatToParts(new Date(timestamp)).map((part) => [part.type, Number(part.value)]),
-    );
-    const representedAsUtc = Date.UTC(
-      parts.year,
-      parts.month - 1,
-      parts.day,
-      parts.hour,
-      parts.minute,
-      parts.second,
-    );
-    timestamp += Date.UTC(...localParts) - representedAsUtc;
-  }
-  return new Date(timestamp);
-}
 
 function requireConfig(keys) {
   const missing = keys.filter((key) => !process.env[key]);
@@ -454,7 +423,6 @@ const apiRouteCache = new Map();
 const apiRouteInFlight = new Map();
 const sharedApiRouteTtl = new Map([
   ["/api/weather", 15 * 60 * 1000],
-  ["/api/calendar", 5 * 60 * 1000],
   ["/api/finance", 60 * 60 * 1000],
   ["/api/home-assistant", 5 * 60 * 1000],
   ["/api/projects", 30 * 60 * 1000],
@@ -627,8 +595,8 @@ async function routeApiUncached(url) {
   }
 
   if (url.pathname === "/api/calendar") {
-    requireConfig(["CALENDAR_ICS_URL"]);
-    return parseCalendar(await fetchText(process.env.CALENDAR_ICS_URL));
+    if (!isCalendarConfigured(process.env)) requireConfig(["CALENDAR_ICS_URLS"]);
+    return calendarService.get({ refresh: url.searchParams.get("refresh") === "1" });
   }
 
   if (url.pathname === "/api/finance") {
@@ -686,7 +654,7 @@ async function loadDailyBriefingInputs({ refresh = false } = {}) {
       path: `/api/news?category=${category}&since=7d&sort=relevant&limit=20`,
     })),
   ];
-  if (process.env.CALENDAR_ICS_URL) {
+  if (isCalendarConfigured(process.env)) {
     jobs.push({ key: "agenda", source: "Agenda · ICS", path: "/api/calendar" });
   }
 
@@ -698,7 +666,7 @@ async function loadDailyBriefingInputs({ refresh = false } = {}) {
   }));
   const inputs = {
     newsByCategory: {},
-    agendaConfigured: Boolean(process.env.CALENDAR_ICS_URL),
+    agendaConfigured: isCalendarConfigured(process.env),
     warnings: [],
   };
   results.forEach((result, index) => {

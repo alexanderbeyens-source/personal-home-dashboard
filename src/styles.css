@@ -397,6 +397,25 @@ button, select { font: inherit; color: inherit; }
 .agenda-list time { font-family: var(--mono); color: var(--accent); font-weight: 500; }
 .agenda-list small { display: block; font-size: 13px; color: var(--muted); }
 
+.agenda-days { display: grid; gap: 18px; }
+.agenda-day-title { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-soft); }
+.agenda-day-title span { font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--muted); }
+.agenda-events { list-style: none; margin: 0; padding: 0; }
+.agenda-event { display: grid; grid-template-columns: 64px 10px minmax(0, 1fr); gap: 10px; align-items: start; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 15px; }
+.agenda-event:last-child { border-bottom: 0; }
+.agenda-when { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 500; }
+.agenda-allday { font-family: var(--font); font-size: 13px; font-weight: 600; color: var(--text-soft); }
+.agenda-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+.agenda-body { display: grid; min-width: 0; }
+.agenda-body strong { font-weight: 600; overflow-wrap: anywhere; }
+.agenda-body small { font-size: 13px; color: var(--muted); }
+.agenda-more { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.calendar-legend { list-style: none; margin: 0 0 18px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; color: var(--text-soft); }
+.calendar-legend li { display: inline-flex; align-items: center; gap: 8px; }
+.calendar-legend .agenda-dot { margin-top: 0; }
+.calendar-legend .is-unavailable { color: var(--muted); }
+.inline-warning { margin-bottom: 12px; font-size: 14px; color: var(--warning); }
+
 .weather.is-large .weather-temp { font-size: 72px; }
 
 .dayparts { list-style: none; margin: 18px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }

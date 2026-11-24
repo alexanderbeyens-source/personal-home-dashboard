@@ -162,6 +162,37 @@ describe("Dashboard widgets", () => {
   });
 });
 
+describe("Agenda widget", () => {
+  beforeEach(() => window.history.replaceState(null, "", "/"));
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows events from several calendars and names a calendar that failed", async () => {
+    const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    mockApi({
+      "/api/calendar": () => jsonResponse({
+        events: [
+          { id: "1", title: "Tandarts", start: soon, end: soon, allDay: false, startDate: null, location: "Diest", calendar: "Gezin", color: "#4f8cff" },
+        ],
+        calendars: [
+          { name: "Gezin", color: "#4f8cff", status: "ok" },
+          { name: "Werk", color: "#ff6a1a", status: "unavailable" },
+        ],
+        warnings: [{ source: "Werk", message: "Agenda tijdelijk niet beschikbaar.", stale: false }],
+      }),
+    });
+    render(<App />);
+
+    const panel = (await screen.findByRole("heading", { name: "Agenda" })).closest("section") as HTMLElement;
+    expect(await within(panel).findByText("Tandarts")).toBeTruthy();
+    expect(within(panel).getByText(/Gezin · .*Diest/)).toBeTruthy();
+    expect(within(panel).getByText("Niet geladen: Werk")).toBeTruthy();
+    expect(within(panel).getByRole("link", { name: /Volledige agenda/ }).getAttribute("href")).toBe("/agenda");
+  });
+});
+
 describe("Weather widget", () => {
   beforeEach(() => window.history.replaceState(null, "", "/"));
   afterEach(() => {

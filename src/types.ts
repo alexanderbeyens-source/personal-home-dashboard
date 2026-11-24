@@ -147,13 +147,22 @@ export interface SportsData {
 }
 
 export interface CalendarEvent {
+  id?: string;
   title: string;
   start: string;
+  end?: string;
+  allDay?: boolean;
+  startDate?: string | null;
   location: string | null;
+  calendar?: string;
+  color?: string;
 }
 
 export interface CalendarData {
   events: CalendarEvent[];
+  calendars?: { name: string; color: string; status: "ok" | "stale" | "unavailable" }[];
+  warnings?: { source: string; message: string; stale: boolean }[];
+  rangeEnd?: string;
 }
 
 export interface HomeData {

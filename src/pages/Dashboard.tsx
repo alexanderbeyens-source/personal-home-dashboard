@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AppShell, type PageProps } from "../components/AppShell";
+import { AgendaDays, groupAgenda } from "../components/agenda";
 import { CompactStory } from "../components/briefing";
 import { ImieCard, MetricCard, PolicyRateCard } from "../components/economy";
 import { Icon } from "../components/Icon";
@@ -98,22 +99,25 @@ function WeatherPanel() {
 
 function AgendaPanel() {
   const agenda = useLiveResource<CalendarData>("/api/calendar", 5 * 60 * 1000, "/api/calendar?refresh=1");
-  const events = agenda.data?.events ?? [];
+  const days = agenda.data ? groupAgenda(agenda.data.events) : [];
+  const unavailable = agenda.data?.calendars?.filter((calendar) => calendar.status === "unavailable") ?? [];
   return (
-    <Panel title="Agenda" eyebrow="Komende afspraken" icon="calendar" className="agenda-panel" resource={agenda}>
-      {events.length ? (
-        <ul className="agenda-list">
-          {events.slice(0, 4).map((event) => (
-            <li key={`${event.start}-${event.title}`}>
-              <time dateTime={event.start}>{formatTime(event.start)}</time>
-              <span><strong>{event.title}</strong>{event.location && <small>{event.location}</small>}</span>
-            </li>
-          ))}
-        </ul>
+    <Panel
+      title="Agenda"
+      eyebrow="Eerstvolgende afspraken"
+      icon="calendar"
+      className="agenda-panel"
+      resource={agenda}
+      moreHref={agenda.data ? "/agenda" : undefined}
+      moreLabel="Volledige agenda"
+    >
+      {unavailable.length > 0 && <p className="inline-warning">Niet geladen: {unavailable.map((calendar) => calendar.name).join(", ")}</p>}
+      {days.length ? (
+        <AgendaDays days={days} maxDays={2} maxPerDay={4} />
       ) : agenda.notConfigured ? (
-        <p className="empty-state">Voeg de privé-ICS-feed van je agenda toe aan de serveromgeving om je afspraken hier te zien.</p>
+        <p className="empty-state">Voeg de openbare ICS-links van je agenda's toe aan de serveromgeving om je afspraken hier te zien.</p>
       ) : (
-        <ResourceState loading={agenda.loading} empty="Geen komende afspraken." />
+        <ResourceState loading={agenda.loading} empty="Geen afspraken in de komende twee weken." />
       )}
     </Panel>
   );
