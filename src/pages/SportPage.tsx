@@ -64,10 +64,10 @@ export function SportPage(props: PageProps) {
             </Panel>
           )}
           <Panel title="Komend" eyebrow={isNba ? "Komende 3 dagen" : "Deze en volgende maand"} icon="calendar" resource={resource}>
-            {data ? <FixtureList events={data.upcoming} empty="Geen geplande wedstrijden in deze periode." label="Komende wedstrijden" /> : <ResourceState loading={resource.loading} empty="Wedstrijden momenteel niet beschikbaar." />}
+            {data ? <FixtureList events={data.upcoming} empty="Geen geplande wedstrijden in deze periode." label="Komende wedstrijden" initial={8} /> : <ResourceState loading={resource.loading} empty="Wedstrijden momenteel niet beschikbaar." />}
           </Panel>
           <Panel title="Gespeeld" eyebrow={isNba ? "Afgelopen 3 dagen" : "Recente speeldagen"} icon="clock" resource={resource}>
-            {data ? <FixtureList events={data.past} empty="Geen recente uitslagen." label="Gespeelde wedstrijden" /> : <ResourceState loading={resource.loading} empty="Uitslagen momenteel niet beschikbaar." />}
+            {data ? <FixtureList events={data.past} empty="Geen recente uitslagen." label="Gespeelde wedstrijden" initial={8} /> : <ResourceState loading={resource.loading} empty="Uitslagen momenteel niet beschikbaar." />}
           </Panel>
         </div>
 

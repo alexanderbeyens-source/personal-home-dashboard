@@ -260,9 +260,12 @@ function OptionalPanels() {
 export function Dashboard(props: PageProps) {
   const now = useClock();
   const greeting = now.getHours() < 12 ? "Goedemorgen" : now.getHours() < 18 ? "Goedemiddag" : "Goedenavond";
-  const date = useMemo(() => new Intl.DateTimeFormat(LOCALE, { weekday: "long", day: "numeric", month: "long" }).format(now), [now]);
+  const date = useMemo(() => {
+    const text = new Intl.DateTimeFormat(LOCALE, { weekday: "long", day: "numeric", month: "long" }).format(now);
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }, [now]);
   return (
-    <AppShell {...props} title={`${greeting}.`} intro={<p><span className="intro-date">{date}</span> · {formatTime(now)}</p>}>
+    <AppShell {...props} title={`${greeting}.`} intro={<p>{date} · {formatTime(now)}</p>}>
       <div className="dashboard-grid">
         <BriefingSummary />
         <div className="span-4 side-stack">

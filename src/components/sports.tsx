@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { formatDay, formatMatchDate, formatTime } from "../format";
 import type { FeaturedPlayerLine, ScoreEvent, SportLeagueId, StandingEntry, StandingGroup } from "../types";
 
@@ -64,6 +65,16 @@ export function LeagueTabs({
   );
 }
 
+export function finalStatus(shortStatus: string) {
+  const status = shortStatus.trim().toUpperCase();
+  if (!status || status === "FT" || status === "FINAL") return "Einde";
+  if (status.includes("OT")) return `Einde (${status.replace(/^FINAL\/?/, "") || "OT"})`;
+  if (status === "AET" || status === "PEN" || status === "FT-PENS") return `Einde (${status === "AET" ? "verl." : "pen."})`;
+  if (status.startsWith("POSTP")) return "Uitgesteld";
+  if (status.startsWith("CANC")) return "Afgelast";
+  return shortStatus;
+}
+
 function TeamName({ team, compact }: { team: ScoreEvent["competitors"][number]; compact: boolean }) {
   return (
     <span className="fixture-team-name">
@@ -88,7 +99,7 @@ export function FixtureRow({ event, compact = false }: { event: ScoreEvent; comp
         ) : (
           <>
             <span>{formatDay(event.date)}</span>
-            <span className="fixture-time">{isPast ? event.shortStatus || "Einde" : formatTime(event.date)}</span>
+            <span className="fixture-time">{isPast ? finalStatus(event.shortStatus) : formatTime(event.date)}</span>
           </>
         )}
       </div>
@@ -105,12 +116,21 @@ export function FixtureRow({ event, compact = false }: { event: ScoreEvent; comp
   );
 }
 
-export function FixtureList({ events, empty, compact = false, label }: { events: ScoreEvent[]; empty: string; compact?: boolean; label: string }) {
+export function FixtureList({ events, empty, compact = false, label, initial }: { events: ScoreEvent[]; empty: string; compact?: boolean; label: string; initial?: number }) {
+  const [expanded, setExpanded] = useState(false);
   if (!events.length) return <p className="empty-state">{empty}</p>;
+  const visible = initial && !expanded ? events.slice(0, initial) : events;
   return (
-    <ul className="fixture-list" aria-label={label}>
-      {events.map((event) => <FixtureRow key={event.id} event={event} compact={compact} />)}
-    </ul>
+    <>
+      <ul className="fixture-list" aria-label={label}>
+        {visible.map((event) => <FixtureRow key={event.id} event={event} compact={compact} />)}
+      </ul>
+      {initial && events.length > initial && (
+        <button className="button-secondary is-block" type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
+          {expanded ? "Minder tonen" : `Toon alle ${events.length} wedstrijden`}
+        </button>
+      )}
+    </>
   );
 }
 
@@ -133,15 +153,15 @@ export function StandingsTable({ group, isNba, compact = false }: { group: Stand
                 <th scope="col" className="num">W-V</th>
                 <th scope="col" className="num">%</th>
                 {!compact && <th scope="col" className="num">Achter</th>}
-                {!compact && <th scope="col" className="num">Reeks</th>}
+                {!compact && <th scope="col" className="num col-detail">Reeks</th>}
               </>
             ) : (
               <>
-                <th scope="col" className="num">G</th>
-                {!compact && <th scope="col" className="num">W</th>}
-                {!compact && <th scope="col" className="num">G</th>}
-                {!compact && <th scope="col" className="num">V</th>}
-                <th scope="col" className="num">DS</th>
+                <th scope="col" className="num"><abbr title="Gespeeld">Wed</abbr></th>
+                {!compact && <th scope="col" className="num col-detail"><abbr title="Winst">W</abbr></th>}
+                {!compact && <th scope="col" className="num col-detail"><abbr title="Gelijk">G</abbr></th>}
+                {!compact && <th scope="col" className="num col-detail"><abbr title="Verlies">V</abbr></th>}
+                <th scope="col" className="num"><abbr title="Doelsaldo">DS</abbr></th>
                 <th scope="col" className="num">Ptn</th>
               </>
             )}
@@ -165,14 +185,14 @@ export function StandingsTable({ group, isNba, compact = false }: { group: Stand
                     <td className="num">{recordFor(entry)}</td>
                     <td className="num">{entry.winPercent ?? "—"}</td>
                     {!compact && <td className="num">{entry.gamesBehind ?? "—"}</td>}
-                    {!compact && <td className="num">{entry.streak ?? "—"}</td>}
+                    {!compact && <td className="num col-detail">{entry.streak ?? "—"}</td>}
                   </>
                 ) : (
                   <>
                     <td className="num">{entry.gamesPlayed ?? "—"}</td>
-                    {!compact && <td className="num">{entry.wins ?? "—"}</td>}
-                    {!compact && <td className="num">{entry.ties ?? "—"}</td>}
-                    {!compact && <td className="num">{entry.losses ?? "—"}</td>}
+                    {!compact && <td className="num col-detail">{entry.wins ?? "—"}</td>}
+                    {!compact && <td className="num col-detail">{entry.ties ?? "—"}</td>}
+                    {!compact && <td className="num col-detail">{entry.losses ?? "—"}</td>}
                     <td className="num">{entry.goalDifference === null ? "—" : entry.goalDifference > 0 ? `+${entry.goalDifference}` : entry.goalDifference}</td>
                     <td className="num points">{entry.points ?? "—"}</td>
                   </>
