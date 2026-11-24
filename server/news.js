@@ -11,7 +11,6 @@ export const NEWS_CATEGORIES = [
 export const NEWS_SOURCES = [
   {
     id: "vrt-nws",
-    enabled: false,
     name: "VRT NWS",
     category: "belgium",
     language: "nl",
