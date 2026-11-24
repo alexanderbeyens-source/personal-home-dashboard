@@ -868,6 +868,9 @@ function Dashboard({
   const agendaEvents = agenda.data?.events ?? [];
   const homeDevices = home.data?.devices ?? [];
   const projectsList = projects.data ?? [];
+  // Optional integrations outside the core product scope stay hidden until they are configured.
+  const showHome = home.data !== null || (home.error !== null && !home.notConfigured);
+  const showProjects = projectsList.length > 0 || projects.error !== null;
 
   return (
     <main className="app-shell">
@@ -955,42 +958,44 @@ function Dashboard({
 
         <EconomicCockpit />
 
-        <Panel title="Home, connected" eyebrow="SMART HOME" icon="home" className="home-panel" resource={home}>
-          {homeDevices.length ? (
-            <>
-              <div className="home-overview">
-                <span className="home-count"><strong>{homeDevices.length}</strong><small>devices</small></span>
-                {home.data?.temperature && <span className="home-reading"><strong>{home.data.temperature.value}{home.data.temperature.unit}</strong><small>{home.data.temperature.name}</small></span>}
-                {home.data?.vacuum && <span className="home-reading"><strong>{home.data.vacuum.state}</strong><small>{home.data.vacuum.name}</small></span>}
-              </div>
-              <div className="device-list">
-                {homeDevices.slice(0, 4).map((device) => <div key={device.name}><span className={`device-indicator ${device.state === "on" ? "device-on" : ""}`} /><span>{device.name}</span><small>{device.state}</small></div>)}
-              </div>
-            </>
-          ) : (
-            <ResourceState loading={home.loading} empty="Connect Home Assistant to see your devices." />
-          )}
-          {home.notConfigured && <span className="setup-hint">Set HOME_ASSISTANT_URL and HOME_ASSISTANT_TOKEN in the server environment</span>}
-          <p className="panel-footnote">Private connection · Home Assistant</p>
-        </Panel>
+        {showHome && (
+          <Panel title="Home, connected" eyebrow="SMART HOME" icon="home" className="home-panel" resource={home}>
+            {homeDevices.length ? (
+              <>
+                <div className="home-overview">
+                  <span className="home-count"><strong>{homeDevices.length}</strong><small>devices</small></span>
+                  {home.data?.temperature && <span className="home-reading"><strong>{home.data.temperature.value}{home.data.temperature.unit}</strong><small>{home.data.temperature.name}</small></span>}
+                  {home.data?.vacuum && <span className="home-reading"><strong>{home.data.vacuum.state}</strong><small>{home.data.vacuum.name}</small></span>}
+                </div>
+                <div className="device-list">
+                  {homeDevices.slice(0, 4).map((device) => <div key={device.name}><span className={`device-indicator ${device.state === "on" ? "device-on" : ""}`} /><span>{device.name}</span><small>{device.state}</small></div>)}
+                </div>
+              </>
+            ) : (
+              <ResourceState loading={home.loading} empty="Connect Home Assistant to see your devices." />
+            )}
+            <p className="panel-footnote">Private connection · Home Assistant</p>
+          </Panel>
+        )}
 
-        <Panel title="Made by you" eyebrow="PERSONAL PROJECTS" icon="grid" className="projects-panel" resource={projects}>
-          {projectsList.length ? (
-            <div className="project-list">
-              {projectsList.slice(0, 4).map((project) => (
-                <a className="project-link" href={project.url} key={project.url} target="_blank" rel="noreferrer">
-                  <span className="project-icon"><Icon name="grid" size={16} /></span>
-                  <span><strong>{project.name}</strong><small>{project.description ?? "Personal project"}</small></span>
-                  <Icon name="arrow" size={15} className="project-arrow" />
-                </a>
-              ))}
-            </div>
-          ) : (
-            <ResourceState loading={projects.loading} empty="Your project links will live here." />
-          )}
-          {projects.error?.includes("Not configured") && <span className="setup-hint">Add links with PROJECTS_JSON in .env</span>}
-          <p className="panel-footnote">Your links · configured locally</p>
-        </Panel>
+        {showProjects && (
+          <Panel title="Made by you" eyebrow="PERSONAL PROJECTS" icon="grid" className="projects-panel" resource={projects}>
+            {projectsList.length ? (
+              <div className="project-list">
+                {projectsList.slice(0, 4).map((project) => (
+                  <a className="project-link" href={project.url} key={project.url} target="_blank" rel="noreferrer">
+                    <span className="project-icon"><Icon name="grid" size={16} /></span>
+                    <span><strong>{project.name}</strong><small>{project.description ?? "Personal project"}</small></span>
+                    <Icon name="arrow" size={15} className="project-arrow" />
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <ResourceState loading={projects.loading} empty="Your project links will live here." />
+            )}
+            <p className="panel-footnote">Your links · configured locally</p>
+          </Panel>
+        )}
       </section>
 
       <footer className="page-footer">

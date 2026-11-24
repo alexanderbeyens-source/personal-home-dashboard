@@ -2238,6 +2238,13 @@ a:focus-visible {
   }
 }
 
+@media (min-width: 761px) {
+  /* Optional panels are hidden until configured; let the cockpit fill the row next to Sports. */
+  .dashboard-grid > .finance-panel:last-child {
+    grid-column: span 6;
+  }
+}
+
 @media (max-width: 760px) {
   .app-shell {
     width: min(100% - 34px, 620px);
