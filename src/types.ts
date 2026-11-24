@@ -190,6 +190,7 @@ export interface EconomicData {
   electricityPrices: EconomicMetric | null;
   gasPrices: EconomicMetric | null;
   imiePrice: EconomicSnapshot | null;
+  imieQuote: ImieQuote | null;
   warnings: { source: string; message: string; stale: boolean }[];
 }
 
@@ -210,7 +211,7 @@ export interface BriefingStory {
 
 export interface BriefingMatch extends ScoreEvent {
   link: string;
-  label: "Live score" | "Result" | "Scheduled";
+  label: "Live" | "Uitslag" | "Gepland";
   source: "ESPN";
 }
 
@@ -256,4 +257,94 @@ export interface Project {
   name: string;
   url: string;
   description?: string;
+}
+
+export interface ImieQuote extends EconomicSnapshot {
+  venue: string;
+  ticker: string;
+  isin: string;
+  previousClose: number | null;
+  changePercent: number | null;
+  dayLow: number | null;
+  dayHigh: number | null;
+  tradingOpen: boolean;
+}
+
+export type SportLeagueId = "nba" | "pro-league" | "premier-league";
+
+export interface StandingEntry {
+  teamId: string;
+  name: string;
+  shortName: string;
+  abbreviation: string;
+  logo: string | null;
+  rank: number;
+  gamesPlayed: number | null;
+  wins: number | null;
+  losses: number | null;
+  ties: number | null;
+  points: number | null;
+  goalDifference: number | null;
+  winPercent: string | null;
+  gamesBehind: string | null;
+  streak: string | null;
+  focus: boolean;
+}
+
+export interface StandingGroup {
+  name: string;
+  entries: StandingEntry[];
+}
+
+export interface FeaturedPlayerLine {
+  name: string;
+  team: string | null;
+  profile: string | null;
+  lastGame: {
+    date: string;
+    opponent: string | null;
+    atVs: string | null;
+    result: string | null;
+    score: string | null;
+    minutes: string | null;
+    points: string | null;
+    rebounds: string | null;
+    assists: string | null;
+    link: string | null;
+  } | null;
+}
+
+export interface SportLeagueInfo {
+  id: SportLeagueId;
+  label: string;
+  standingsLink: string;
+}
+
+export interface SportWarning {
+  source: string;
+  message: string;
+  stale: boolean;
+}
+
+export interface SportOverview {
+  league: SportLeagueInfo;
+  live: ScoreEvent[];
+  past: ScoreEvent[];
+  upcoming: ScoreEvent[];
+  standings: StandingGroup | null;
+  players: FeaturedPlayerLine[];
+  stale: boolean;
+  warnings: SportWarning[];
+}
+
+export interface SportDetail {
+  league: SportLeagueInfo;
+  live: ScoreEvent[];
+  past: ScoreEvent[];
+  upcoming: ScoreEvent[];
+  standings: StandingGroup[];
+  news: NewsArticle[];
+  players: FeaturedPlayerLine[];
+  stale: boolean;
+  warnings: SportWarning[];
 }

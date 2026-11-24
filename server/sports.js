@@ -289,7 +289,7 @@ export function createSportsService({ fetchJson, loadExtraNews = async () => ({ 
     const group = groups.find((item) => item.name === league.focusGroup) ?? groups[0];
     const top = group.entries.slice(0, 5);
     const extra = group.entries.filter((entry) => entry.focus && !top.includes(entry));
-    return { group: group.name, entries: [...top, ...extra.slice(0, 1)] };
+    return { name: group.name, entries: [...top, ...extra.slice(0, 1)] };
   }
 
   async function overview(leagueId, { refresh = false } = {}) {

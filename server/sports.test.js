@@ -148,7 +148,7 @@ describe("sports service", () => {
     expect(overview.past.map(({ id }) => id)).toEqual(["g1"]);
     expect(overview.upcoming.map(({ id }) => id)).toEqual(["g3"]);
     expect(overview.upcoming[0].competitors.map(({ score }) => score)).toEqual(["", ""]);
-    expect(overview.standings.group).toBe("Western Conference");
+    expect(overview.standings.name).toBe("Western Conference");
     expect(overview.standings.entries.map(({ abbreviation }) => abbreviation)).toEqual(["SA", "LAL", "MIN", "HOU", "MEM", "POR"]);
     expect(overview.warnings).toEqual([{ source: "NBA", message: "Bron tijdelijk niet beschikbaar.", stale: false }]);
   });
