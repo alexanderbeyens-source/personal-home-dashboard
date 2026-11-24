@@ -229,3 +229,53 @@ describe("Weather widget", () => {
     expect(within(panel).getByRole("link", { name: /Weerdetails/ }).getAttribute("href")).toBe("/weer");
   });
 });
+
+describe("IMIE chart", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/economie");
+    window.localStorage.clear();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("loads the chosen range and shows the change with an honest source label", async () => {
+    const requested: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/api/auth/session") return jsonResponse({ user: { id: "1" } });
+      if (url.pathname === "/api/auth/csrf") return jsonResponse({ csrfToken: "csrf" });
+      if (url.pathname === "/api/economy/imie-history") {
+        const range = url.searchParams.get("range") ?? "";
+        requested.push(range);
+        return jsonResponse({
+          range,
+          basis: "nav-eur",
+          currency: "EUR",
+          points: [{ t: "2025-11-21", v: 9.631 }, { t: "2026-05-21", v: 10.5 }, { t: "2026-11-23", v: 11.212 }],
+          changePercent: range === "1y" ? 16.41 : -3.51,
+          from: "2025-11-21",
+          to: "2026-11-23",
+          source: "State Street SPDR (NAV) · ECB (EUR/USD)",
+          sourceUrl: "https://www.ssga.com/",
+          note: "Officiële dagelijkse NAV in USD, omgerekend naar EUR met de ECB-referentiekoers.",
+          stale: false,
+          splits: [],
+        });
+      }
+      return jsonResponse({ error: "Live gegevens zijn tijdelijk niet beschikbaar." }, 503);
+    }));
+    render(<App />);
+
+    const summary = () => document.querySelector(".imie-chart-summary")?.textContent?.replace(/\s+/g, " ") ?? "";
+    await waitFor(() => expect(summary()).toMatch(/▼ ?3,51 %/));
+    fireEvent.click(screen.getByRole("button", { name: "1J" }));
+    await waitFor(() => expect(summary()).toMatch(/▲ ?16,41 %/));
+    expect(screen.getByRole("button", { name: "1J" }).getAttribute("aria-pressed")).toBe("true");
+    expect(requested).toContain("1y");
+    expect(screen.getByRole("img", { name: /IMIE 1 jaar/ })).toBeTruthy();
+    expect(screen.getByText(/omgerekend naar EUR/)).toBeTruthy();
+    expect(window.localStorage.getItem("northstar.imie-range")).toBe("1y");
+  });
+});

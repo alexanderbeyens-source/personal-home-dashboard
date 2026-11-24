@@ -8,8 +8,10 @@ import { Auth } from "@auth/core";
 import GitHub from "@auth/core/providers/github";
 import { createDailyBriefingService } from "./briefing.js";
 import { loadNbaData, loadNbaPlayers, mapSportsEvents } from "./data.js";
-import { createEconomicLoaders, createEconomicsService } from "./economics.js";
+import { createEconomicLoaders, createEconomicsService, isXetraTradingTime } from "./economics.js";
 import { createNewsService, isAllowedFeedContentType } from "./news.js";
+import { createImieHistoryService } from "./imie-history.js";
+
 import { calendarsFromEnv, createCalendarService, isCalendarConfigured } from "./calendar.js";
 import { createSportsService } from "./sports.js";
 import { WEATHER_CURRENT, WEATHER_DAILY, WEATHER_HOURLY, mapForecast } from "./weather.js";
@@ -263,7 +265,16 @@ async function fetchText(url, options = {}) {
   return response.text();
 }
 
-async function readLimitedBody(response, maxBytes) {
+async function fetchBuffer(url, maxBytes = 2 * 1024 * 1024) {
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(20000),
+    headers: { accept: "*/*", "user-agent": "NorthstarHomeDashboard/0.1" },
+  });
+  if (!response.ok) throw new Error(`Data source returned ${response.status}`);
+  return readLimitedBody(response, maxBytes, true);
+}
+
+async function readLimitedBody(response, maxBytes, asBuffer = false) {
   const contentLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
     throw new Error("Data source response exceeded the size limit.");
@@ -283,7 +294,8 @@ async function readLimitedBody(response, maxBytes) {
     }
     chunks.push(Buffer.from(value));
   }
-  return Buffer.concat(chunks, totalBytes).toString("utf8");
+  const body = Buffer.concat(chunks, totalBytes);
+  return asBuffer ? body : body.toString("utf8");
 }
 
 // Calendar feeds can be large; limit size and only follow https redirects. The URL
@@ -431,6 +443,11 @@ const sharedApiRouteTtl = new Map([
   ["/api/sports/premier-league", 60 * 1000],
   ["/api/sports/belgian-football", 5 * 60 * 1000],
 ]);
+const imieHistoryService = createImieHistoryService({
+  fetchJson,
+  fetchBuffer,
+  isTradingTime: isXetraTradingTime,
+});
 const sportsService = createSportsService({
   fetchJson,
   loadExtraNews: (sourceId) => newsService.loadSource(sourceId),
@@ -485,6 +502,10 @@ async function routeApiUncached(url) {
     return sportRoute[2]
       ? sportsService.overview(sportRoute[1], options)
       : sportsService.detail(sportRoute[1], options);
+  }
+
+  if (url.pathname === "/api/economy/imie-history") {
+    return imieHistoryService.get(url.searchParams.get("range") ?? "1m");
   }
 
   if (url.pathname === "/api/economy") {

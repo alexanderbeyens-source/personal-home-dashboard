@@ -4,6 +4,7 @@ import { AgendaDays, groupAgenda } from "../components/agenda";
 import { CompactStory } from "../components/briefing";
 import { ImieCard, MetricCard, PolicyRateCard } from "../components/economy";
 import { Icon } from "../components/Icon";
+import { ImieChart } from "../components/ImieChart";
 import { Panel, ResourceState, SectionTitle } from "../components/Panel";
 import { FixtureList, LeagueTabs, PlayerLines, StandingsTable, isLeagueId, leagueLabel } from "../components/sports";
 import { LOCALE, formatNumber, formatTemperature, formatTime, weatherIcon, weatherLabel } from "../format";
@@ -219,6 +220,7 @@ function EconomySummary() {
       moreLabel="Alle economische data"
     >
       <ImieCard data={data} />
+      <ImieChart compact defaultRange="1m" />
       <div className="metric-grid compact">
         {deposit ? <PolicyRateCard rate={deposit} compact /> : <MetricCard title="ECB-depositorente" metric={null} compact />}
         <MetricCard title="Inflatie België" metric={data?.belgiumInflation ?? null} compact />
