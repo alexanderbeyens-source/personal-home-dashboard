@@ -90,6 +90,7 @@ describe("protected API routes", () => {
   it("reports unconfigured integrations explicitly without exposing variable names", async () => {
     const server = await startServer({
       CALENDAR_ICS_URL: "",
+      CALENDAR_ICS_URLS: "",
       HOME_ASSISTANT_URL: "",
       HOME_ASSISTANT_TOKEN: "",
     });
