@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createEconomicLoaders, createEconomicsService } from "./economics.js";
+import { createEconomicLoaders, createEconomicsService, isXetraTradingTime } from "./economics.js";
 
 const now = Date.parse("2026-11-23T12:00:00.000Z");
 
@@ -131,6 +131,55 @@ describe("official economic data loaders", () => {
   });
 });
 
+describe("IMIE Xetra quote", () => {
+  const quote = {
+    isin: "IE00B3YLTY66",
+    lastPrice: 11.276,
+    timestampLastPrice: "2026-11-24T10:01:34+01:00",
+    closingPricePrevTradingDay: 11.334,
+    changeToPrevDayInPercent: -0.51,
+    dayLow: 11.27,
+    dayHigh: 11.346,
+    currency: { originalValue: "EUR" },
+  };
+
+  it("parses the delayed Xetra quote with its timestamp and day range", async () => {
+    const fetchJson = vi.fn(async () => quote);
+    const loaders = createEconomicLoaders({ fetchJson, fetchText: vi.fn(), now: () => Date.parse("2026-11-24T09:17:00Z") });
+
+    await expect(loaders.imieQuote()).resolves.toMatchObject({
+      value: 11.276,
+      unit: "EUR",
+      period: "2026-11-24T09:01:34.000Z",
+      venue: "Xetra",
+      ticker: "SPYI",
+      previousClose: 11.334,
+      changePercent: -0.51,
+      dayLow: 11.27,
+      dayHigh: 11.346,
+      tradingOpen: true,
+      observationStale: false,
+      priceType: expect.stringContaining("vertraagd"),
+    });
+    expect(fetchJson).toHaveBeenCalledWith(expect.stringContaining("isin=IE00B3YLTY66&mic=XETR"));
+  });
+
+  it("rejects incomplete quotes or quotes for another fund instead of showing them", async () => {
+    for (const payload of [{ ...quote, lastPrice: null }, { ...quote, timestampLastPrice: "bad" }, { ...quote, isin: "IE0000000000" }]) {
+      const loaders = createEconomicLoaders({ fetchJson: vi.fn(async () => payload), fetchText: vi.fn(), now: () => now });
+      await expect(loaders.imieQuote()).rejects.toThrow();
+    }
+  });
+
+  it("knows the Xetra trading window in Frankfurt time", () => {
+    expect(isXetraTradingTime(Date.parse("2026-11-24T09:17:00Z"))).toBe(true);
+    expect(isXetraTradingTime(Date.parse("2026-11-24T07:30:00Z"))).toBe(false);
+    expect(isXetraTradingTime(Date.parse("2026-11-24T17:00:00Z"))).toBe(false);
+    expect(isXetraTradingTime(Date.parse("2026-11-28T11:00:00Z"))).toBe(false);
+    expect(isXetraTradingTime(Date.parse("2026-07-01T15:30:00Z"))).toBe(true);
+  });
+});
+
 describe("economic source cache", () => {
   it("isolates source failures, retains prior observations, and marks them stale", async () => {
     const keys = [
@@ -144,6 +193,7 @@ describe("economic source cache", () => {
       "electricityPrices",
       "gasPrices",
       "imiePrice",
+      "imieQuote",
     ];
     const loaders = Object.fromEntries(keys.map((key) => [key, vi.fn(async () => ({ key, value: 1 }))]));
     const service = createEconomicsService({ loaders, now: () => now });

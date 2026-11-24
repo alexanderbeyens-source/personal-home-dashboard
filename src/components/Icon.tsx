@@ -1,4 +1,4 @@
-type IconName =
+export type IconName =
   | "sun"
   | "cloud"
   | "calendar"
@@ -11,7 +11,9 @@ type IconName =
   | "clock"
   | "wind"
   | "drop"
-  | "refresh";
+  | "refresh"
+  | "trophy"
+  | "trend";
 
 const paths: Record<IconName, React.ReactNode> = {
   sun: (
@@ -31,6 +33,8 @@ const paths: Record<IconName, React.ReactNode> = {
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
   wind: <path d="M3 8h12a3 3 0 1 0-3-3M2 12h17a3 3 0 1 1-3 3M4 16h6a2 2 0 1 1-2 2" />,
   drop: <path d="M12 3s7 7.3 7 12a7 7 0 0 1-14 0c0-4.7 7-12 7-12Z" />,
+  trophy: <path d="M8 4h8v5a4 4 0 0 1-8 0V4Zm0 2H4.5a3 3 0 0 0 3.5 4M16 6h3.5a3 3 0 0 1-3.5 4M12 13v4m-4 3h8m-6-3h4" />,
+  trend: <path d="m3 17 6-6 4 4 8-8m0 0h-5m5 0v5" />,
   refresh: <path d="M20 7v5h-5M4 17v-5h5m-4.2-2A7.5 7.5 0 0 1 18 7l2 5M4 12l2 5a7.5 7.5 0 0 0 13.2-3" />,
 };
 
@@ -52,7 +56,7 @@ export function Icon({
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.7"
+      strokeWidth="1.9"
       strokeLinecap="round"
       strokeLinejoin="round"
     >

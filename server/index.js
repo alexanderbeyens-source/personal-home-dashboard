@@ -10,6 +10,7 @@ import { createDailyBriefingService } from "./briefing.js";
 import { loadNbaData, loadNbaPlayers, mapSportsEvents } from "./data.js";
 import { createEconomicLoaders, createEconomicsService } from "./economics.js";
 import { createNewsService, isAllowedFeedContentType } from "./news.js";
+import { createSportsService } from "./sports.js";
 
 const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
 
@@ -461,12 +462,16 @@ const sharedApiRouteTtl = new Map([
   ["/api/sports/premier-league", 60 * 1000],
   ["/api/sports/belgian-football", 5 * 60 * 1000],
 ]);
+const sportsService = createSportsService({
+  fetchJson,
+  loadExtraNews: (sourceId) => newsService.loadSource(sourceId),
+});
 const economicsService = createEconomicsService({
   loaders: createEconomicLoaders({ fetchJson, fetchText }),
 });
 
 async function routeApi(url) {
-  if (url.pathname === "/api/briefing" || url.pathname === "/api/news") {
+  if (url.pathname === "/api/briefing" || url.pathname === "/api/news" || url.pathname.startsWith("/api/sport/")) {
     return routeApiUncached(url);
   }
   const ttlMs = sharedApiRouteTtl.get(url.pathname);
@@ -500,6 +505,19 @@ async function routeApi(url) {
 }
 
 async function routeApiUncached(url) {
+  const sportRoute = url.pathname.match(/^\/api\/sport\/([a-z-]+)(\/overview)?$/);
+  if (sportRoute) {
+    if (url.searchParams.has("refresh") && url.searchParams.get("refresh") !== "1") {
+      const error = new Error("Unknown sport refresh option.");
+      error.status = 400;
+      throw error;
+    }
+    const options = { refresh: url.searchParams.get("refresh") === "1" };
+    return sportRoute[2]
+      ? sportsService.overview(sportRoute[1], options)
+      : sportsService.detail(sportRoute[1], options);
+  }
+
   if (url.pathname === "/api/economy") {
     if (url.searchParams.has("refresh") && url.searchParams.get("refresh") !== "1") {
       const error = new Error("Unknown economy refresh option.");

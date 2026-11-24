@@ -49,7 +49,8 @@ A single `node:http` handler does everything, in this order:
 
 Domain logic lives in separate, unit-tested modules built as factories with injected dependencies (fetchers, `now`) so tests run without network:
 - `news.js` — `NEWS_SOURCES` registry (RSS/Atom/ESPN JSON), parsing, URL canonicalization, dedup, deterministic relevance score (72h decay, source type, feed position, keyword boosts), per-source isolation so one failing feed doesn't break others.
-- `economics.js` — `createEconomicLoaders` (Frankfurter, ECB, World Bank, Eurostat, IMIE issuer) + `createEconomicsService` with per-source last-known-good caching.
+- `economics.js` — `createEconomicLoaders` (Frankfurter, ECB, World Bank, Eurostat, IMIE issuer close + delayed Xetra quote) + `createEconomicsService` with per-source last-known-good caching (`ttlMs` may be a function of time).
+- `sports.js` — `createSportsService` for `/api/sport/<league>[/overview]`: ESPN standings, fixtures, news and NBA player game logs, each cached separately with last-known-good fallback.
 - `briefing.js` — `composeDailyBriefing` combines news, sports, economics, calendar, weather into an extractive, deterministic briefing (15-min cache). No LLM/AI API.
 - `data.js` — ESPN sports mapping.
 
@@ -58,10 +59,11 @@ Outbound fetches go through `fetchJson`/`fetchText`/`readLimitedBody` in `index.
 `server/security.test.js` spawns the real server on a random port with dummy auth env and asserts API routes are protected; keep it passing when touching request handling.
 
 ### Frontend (`src/`)
-- No router library: `App.tsx` checks `/api/auth/session`, shows the GitHub sign-in screen if unauthenticated, then picks a page by `window.location.pathname` (`/news` → `NewsCenter`, `/mobility` → `MobilityHomePage`, else `Dashboard`). Most pages/panels live in `App.tsx`.
+- No router library: `App.tsx` checks `/api/auth/session`, shows the GitHub sign-in screen if unauthenticated, then picks a page from `src/pages/` by `window.location.pathname` (`/briefing`, `/news`, `/sport/<league>`, `/economie`, else `Dashboard`). Every page renders inside `AppShell` (header + nav); shared widgets live in `src/components/` (`briefing`, `sports`, `economy`), and nl-BE date/number formatting in `src/format.ts`.
 - Data fetching uses `useLiveResource<T>(url, refreshInterval, refreshUrl)` (`src/hooks/`), which handles polling, abort, in-flight dedup, and `loading`/`refreshing`/`error`/`updatedAt` state; render it via `Panel`/`ResourceState` (`src/components/Panel.tsx`).
 - API response shapes are in `src/types.ts` and must match what `server/` returns.
-- `/mobility` is a static feasibility assessment (Mercedes / Dreame integrations were evaluated and deliberately **not** implemented) — don't add device adapters or credentials without the user's decision.
+- Styling is one token-based `src/styles.css` (orange accent `--accent`, no green/yellow for status; text colours ≥ 4.5:1 on panels; metadata ≥ 13 px).
+- Mercedes / Dreame integrations were evaluated and deliberately **not** implemented — don't add device adapters or credentials without the user's decision.
 
 ## Product rules (from README/spec)
 
