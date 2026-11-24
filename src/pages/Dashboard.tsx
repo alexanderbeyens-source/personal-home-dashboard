@@ -42,7 +42,7 @@ function BriefingSummary() {
       title="Dagelijkse briefing"
       eyebrow="Top 3 van vandaag"
       icon="news"
-      className="span-8 briefing-summary"
+      className="briefing-summary"
       resource={resource}
       stale={resource.data?.stale}
       moreHref="/briefing"
@@ -156,7 +156,7 @@ function SportWidget() {
       title="Sport"
       eyebrow={leagueLabel(league)}
       icon="ball"
-      className="span-7 sport-widget"
+      className="sport-widget"
       resource={resource as LiveResource<unknown>}
       stale={data?.stale}
       moreHref={`/sport/${league}`}
@@ -216,7 +216,7 @@ function EconomySummary() {
       title="Economie"
       eyebrow="Markten & indicatoren"
       icon="chart"
-      className="span-5 economy-summary"
+      className="economy-summary"
       resource={economics as LiveResource<unknown>}
       moreHref="/economie"
       moreLabel="Alle economische data"
@@ -250,7 +250,7 @@ function OptionalPanels() {
   return (
     <>
       {showHome && (
-        <Panel title="Thuis, verbonden" eyebrow="Slim huis" icon="home" className="span-6" resource={home}>
+        <Panel title="Thuis, verbonden" eyebrow="Slim huis" icon="home" className="optional-panel" resource={home}>
           {devices.length ? (
             <ul className="device-list">
               {devices.slice(0, 6).map((device) => (
@@ -263,7 +263,7 @@ function OptionalPanels() {
         </Panel>
       )}
       {showProjects && (
-        <Panel title="Door jou gemaakt" eyebrow="Persoonlijke projecten" icon="grid" className="span-6" resource={projects}>
+        <Panel title="Door jou gemaakt" eyebrow="Persoonlijke projecten" icon="grid" className="optional-panel" resource={projects}>
           {projectList.length ? (
             <ul className="link-list">
               {projectList.slice(0, 4).map((project) => (
@@ -290,17 +290,21 @@ export function Dashboard(props: PageProps) {
   }, [now]);
   return (
     <AppShell {...props} title={`${greeting}.`} intro={<p>{date} · {formatTime(now)}</p>}>
-      <div className="dashboard-grid">
-        <BriefingSummary />
-        <div className="span-4 side-stack">
+      {/* Two independent columns, so a tall side column never leaves a gap next to the
+          briefing. Below 1000px both collapse into one column ordered by importance. */}
+      <div className="dashboard-columns">
+        <div className="dash-column dash-main">
+          <BriefingSummary />
+          <SportWidget />
+          <EconomySummary />
+          <OptionalPanels />
+        </div>
+        <div className="dash-column dash-side">
           <WeatherPanel />
           <AgendaPanel />
           <TasksPanel csrfToken={props.csrfToken} />
+          <HealthPanel />
         </div>
-        <SportWidget />
-        <EconomySummary />
-        <HealthPanel />
-        <OptionalPanels />
       </div>
     </AppShell>
   );

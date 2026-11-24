@@ -153,13 +153,13 @@ button, select { font: inherit; color: inherit; }
 
 .page-alert { max-width: 1360px; margin: 16px auto 0; padding: 12px 24px; color: var(--danger); }
 
-.dashboard-grid, .page-grid {
+.page-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: var(--gap);
   align-items: start;
 }
-.dashboard-grid > *, .page-grid > * { grid-column: span 12; min-width: 0; }
+.page-grid > * { grid-column: span 12; min-width: 0; }
 
 @media (min-width: 1000px) {
   .span-4 { grid-column: span 4 !important; }
@@ -174,6 +174,29 @@ button, select { font: inherit; color: inherit; }
 }
 
 .side-stack { display: flex; flex-direction: column; gap: var(--gap); }
+
+/* Dashboard: two independent columns (no shared rows, so no gaps between widgets). */
+.dashboard-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(340px, 1fr);
+  gap: var(--gap);
+  align-items: start;
+}
+.dash-column { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+.dash-column > * { min-width: 0; }
+@media (max-width: 999px) {
+  .dashboard-columns { grid-template-columns: minmax(0, 1fr); }
+  /* Flatten the columns so every widget can be ordered by importance. */
+  .dash-column { display: contents; }
+  .briefing-summary { order: 1; }
+  .weather-panel { order: 2; }
+  .agenda-panel { order: 3; }
+  .tasks-panel { order: 4; }
+  .sport-widget { order: 5; }
+  .economy-summary { order: 6; }
+  .health-panel { order: 7; }
+  .optional-panel { order: 8; }
+}
 
 /* ---------- Panel ---------- */
 .panel {
