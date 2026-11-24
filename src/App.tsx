@@ -950,7 +950,7 @@ function Dashboard({
           ) : (
             <ResourceState loading={agenda.loading} empty="Connect a calendar to see what's coming up." />
           )}
-          {agenda.notConfigured && <span className="setup-hint">Set CALENDAR_ICS_URL in the server environment (Render) to show your agenda</span>}
+          {agenda.notConfigured && <span className="setup-hint">Add your calendar's private ICS feed to the server environment to show your agenda</span>}
           <p className="panel-footnote">Calendar details stay private · ICS connection</p>
         </Panel>
 
