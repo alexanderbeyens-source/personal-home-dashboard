@@ -151,8 +151,9 @@ export function createTasksService({ github, now = () => Date.now(), ttlMs = 60 
       throw error;
     }
     if (status !== 200 || typeof json?.content !== "string" || typeof json?.sha !== "string") {
-      const error = new Error(`GitHub returned ${status}`);
+      const error = new Error("GitHub returned an error status.");
       error.status = 502;
+      error.upstreamStatus = status;
       throw error;
     }
     return { markdown: Buffer.from(json.content, "base64").toString("utf8"), sha: json.sha };
@@ -191,8 +192,9 @@ export function createTasksService({ github, now = () => Date.now(), ttlMs = 60 
       });
       if (status === 200 || status === 201) break;
       if (status !== 409 && status !== 422) {
-        const error = new Error(`GitHub returned ${status}`);
+        const error = new Error("GitHub returned an error status.");
         error.status = 502;
+        error.upstreamStatus = status;
         throw error;
       }
       if (attempt === 2) {

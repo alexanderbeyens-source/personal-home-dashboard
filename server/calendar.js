@@ -133,7 +133,9 @@ export function expandCalendar(icsText, { from, to, calendar }) {
   try {
     root = new ICAL.Component(ICAL.parse(icsText));
   } catch {
-    throw new Error("Agendabestand kon niet gelezen worden.");
+    const error = new Error("Agendabestand kon niet gelezen worden.");
+    error.kind = "parse";
+    throw error;
   }
   for (const vtimezone of root.getAllSubcomponents("vtimezone")) {
     const timezone = new ICAL.Timezone(vtimezone);
@@ -186,7 +188,8 @@ export function expandCalendar(icsText, { from, to, calendar }) {
   return events;
 }
 
-export function createCalendarService({ fetchText, now = () => Date.now(), getCalendars }) {
+// onCalendarError(calendarId, error) is for logging; it gets the internal id ("cal-1"), never the URL.
+export function createCalendarService({ fetchText, now = () => Date.now(), getCalendars, onCalendarError = () => {} }) {
   const cache = new Map();
   const inFlight = new Map();
 
@@ -201,6 +204,7 @@ export function createCalendarService({ fetchText, now = () => Date.now(), getCa
         cache.set(calendar.url, entry);
         return entry;
       } catch (error) {
+        onCalendarError(calendar.id, error);
         if (cached) {
           const retained = { ...cached, expiresAt: now() + 60 * 1000, stale: true, error };
           cache.set(calendar.url, retained);
@@ -235,7 +239,8 @@ export function createCalendarService({ fetchText, now = () => Date.now(), getCa
         events.push(...expandCalendar(result.value.text, { from, to, calendar }));
         if (result.value.stale) warnings.push({ source: calendar.name, message: "Vernieuwen mislukt; de laatste geslaagde versie wordt getoond.", stale: true });
         status.push({ name: calendar.name, color: calendar.color, status: result.value.stale ? "stale" : "ok" });
-      } catch {
+      } catch (error) {
+        onCalendarError(calendar.id, error);
         warnings.push({ source: calendar.name, message: "Agendabestand kon niet gelezen worden.", stale: false });
         status.push({ name: calendar.name, color: calendar.color, status: "unavailable" });
       }
