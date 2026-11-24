@@ -1,3 +1,5 @@
+import type { IconName } from "./components/Icon";
+
 export const LOCALE = "nl-BE";
 
 function parseDate(value: string | Date | null | undefined) {
@@ -92,15 +94,43 @@ export function formatEconomicPeriod(period: string) {
   return new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "short", year: "numeric" }).format(date);
 }
 
-export function weatherLabel(code: number, isDay: boolean) {
+export function weatherLabel(code: number | null, isDay = true) {
+  if (code === null) return "Onbekend";
   if (code === 0) return isDay ? "Onbewolkt" : "Heldere nacht";
-  if (code <= 3) return "Gedeeltelijk bewolkt";
-  if (code <= 48) return "Mistig";
-  if (code <= 67) return "Regenbuien";
+  if (code === 1) return "Overwegend helder";
+  if (code === 2) return "Gedeeltelijk bewolkt";
+  if (code === 3) return "Bewolkt";
+  if (code <= 48) return "Mist";
+  if (code <= 57) return "Motregen";
+  if (code <= 67) return "Regen";
   if (code <= 77) return "Sneeuw";
   if (code <= 82) return "Regenbuien";
   if (code <= 86) return "Sneeuwbuien";
   return "Onweer";
+}
+
+export function weatherIcon(code: number | null, isDay = true): IconName {
+  if (code === null) return "cloud";
+  if (code === 0) return isDay ? "sun" : "moon";
+  if (code <= 2) return isDay ? "partly" : "moon";
+  if (code === 3) return "cloud";
+  if (code <= 48) return "fog";
+  if (code <= 67 || (code >= 80 && code <= 82)) return "rain";
+  if (code <= 77 || code === 85 || code === 86) return "snow";
+  return "storm";
+}
+
+export function formatTemperature(value: number | null) {
+  return value === null ? "—" : `${Math.round(value)}°`;
+}
+
+export function localDateLabel(date: string, today: string) {
+  if (date === today) return "Vandaag";
+  const tomorrow = new Date(`${today}T12:00:00`);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  if (date === tomorrow.toISOString().slice(0, 10)) return "Morgen";
+  const label = new Intl.DateTimeFormat(LOCALE, { weekday: "long" }).format(new Date(`${date}T12:00:00`));
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 export const NEWS_CATEGORIES = [

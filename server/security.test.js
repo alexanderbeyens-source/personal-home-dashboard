@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
@@ -90,6 +91,9 @@ describe("protected API routes", () => {
   it("reports unconfigured integrations explicitly without exposing variable names", async () => {
     const server = await startServer({
       CALENDAR_ICS_URL: "",
+      GITHUB_TASKS_TOKEN: "",
+      GITHUB_TASKS_REPO: "",
+      CALENDAR_ICS_URLS: "",
       HOME_ASSISTANT_URL: "",
       INTERVALS_ATHLETE_ID: "",
       INTERVALS_API_KEY: "",
@@ -103,7 +107,7 @@ describe("protected API routes", () => {
     });
     const headers = { cookie: `${sessionCookieName}=${sessionToken}` };
 
-    for (const route of ["/api/calendar", "/api/home-assistant", "/api/health"]) {
+    for (const route of ["/api/calendar", "/api/home-assistant", "/api/tasks", "/api/health"]) {
       const response = await fetch(`${server.baseUrl}${route}`, { headers });
       expect(response.status).toBe(503);
       const body = await response.json();
@@ -111,10 +115,47 @@ describe("protected API routes", () => {
         error: "Deze koppeling is niet geconfigureerd op de server.",
         code: "not_configured",
       });
-      expect(JSON.stringify(body)).not.toMatch(/CALENDAR_ICS_URL|HOME_ASSISTANT|INTERVALS/);
+      expect(JSON.stringify(body)).not.toMatch(/CALENDAR_ICS_URL|HOME_ASSISTANT|GITHUB_TASKS|INTERVALS/);
     }
 
     const unknown = await fetch(`${server.baseUrl}/api/unknown-route`, { headers });
     expect(unknown.status).toBe(404);
+  });
+
+  it("protects the task write route with origin, session, CSRF token and size checks", async () => {
+    const server = await startServer({ GITHUB_TASKS_TOKEN: "", GITHUB_TASKS_REPO: "" });
+    child = server.child;
+    const { baseUrl } = server;
+    const sessionToken = await encode({
+      token: { githubUserId: allowedGithubId },
+      secret: authSecret,
+      salt: sessionCookieName,
+    });
+    const csrfToken = "c".repeat(64);
+    const csrfCookie = `authjs.csrf-token=${encodeURIComponent(`${csrfToken}|${createHash("sha256").update(`${csrfToken}${authSecret}`).digest("hex")}`)}`;
+    const session = `${sessionCookieName}=${sessionToken}`;
+    const valid = { id: "0123456789abcdef", done: true, csrfToken };
+    const post = (body, headers = {}) => fetch(`${baseUrl}/api/tasks/toggle`, {
+      method: "POST",
+      headers: { origin: baseUrl, "content-type": "application/json", cookie: `${session}; ${csrfCookie}`, ...headers },
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    });
+
+    expect((await fetch(`${baseUrl}/api/tasks/toggle`)).status).toBe(405);
+    expect((await fetch(`${baseUrl}/api/tasks`, { method: "POST" })).status).toBe(405);
+    expect((await fetch(`${baseUrl}/api/tasks`)).status).toBe(401);
+
+    expect((await post(valid, { cookie: csrfCookie })).status).toBe(401);
+    expect((await post(valid, { origin: "https://evil.example" })).status).toBe(403);
+    expect((await post(valid, { origin: "" })).status).toBe(403);
+    expect((await post({ ...valid, csrfToken: "d".repeat(64) })).status).toBe(403);
+    expect((await post(valid, { cookie: session })).status).toBe(403);
+    expect((await post(valid, { "content-type": "text/plain" })).status).toBe(415);
+    expect((await post({ ...valid, padding: "x".repeat(3000) })).status).toBe(413);
+    expect((await post({ ...valid, id: "../../etc" })).status).toBe(400);
+
+    const accepted = await post(valid);
+    expect(accepted.status).toBe(503);
+    expect(await accepted.json()).toEqual({ error: "Deze koppeling is niet geconfigureerd op de server.", code: "not_configured" });
   });
 });

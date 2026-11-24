@@ -8,10 +8,15 @@ import { Auth } from "@auth/core";
 import GitHub from "@auth/core/providers/github";
 import { createDailyBriefingService } from "./briefing.js";
 import { loadNbaData, loadNbaPlayers, mapSportsEvents } from "./data.js";
-import { createEconomicLoaders, createEconomicsService } from "./economics.js";
+import { createEconomicLoaders, createEconomicsService, isXetraTradingTime } from "./economics.js";
 import { createNewsService, isAllowedFeedContentType } from "./news.js";
 import { INTERVALS_API, createHealthService, healthConfigFromEnv } from "./health.js";
+import { createImieHistoryService } from "./imie-history.js";
+import { calendarsFromEnv, createCalendarService, isCalendarConfigured } from "./calendar.js";
 import { createSportsService } from "./sports.js";
+import { isAllowedOrigin, verifyCsrfToken } from "./csrf.js";
+import { createTasksService, tasksConfigFromEnv } from "./tasks.js";
+import { WEATHER_CURRENT, WEATHER_DAILY, WEATHER_HOURLY, mapForecast } from "./weather.js";
 
 const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
 
@@ -32,6 +37,7 @@ const authRequiredEnv = [
 const authMissingEnv = authRequiredEnv.filter((key) => !process.env[key]?.trim());
 let authConfig = null;
 let sessionCookieName = null;
+let csrfCookieName = null;
 
 if (authMissingEnv.length > 0) {
   console.error(`Authentication configuration is missing: ${authMissingEnv.join(", ")}`);
@@ -54,6 +60,7 @@ if (authMissingEnv.length === 0) {
 
     const secureCookie = authUrl.protocol === "https:";
     sessionCookieName = `${secureCookie ? "__Host-" : ""}northstar.session-token`;
+    csrfCookieName = `${secureCookie ? "__Host-" : ""}authjs.csrf-token`;
     authConfig = {
       secret: process.env.AUTH_SECRET,
       basePath: "/api/auth",
@@ -262,7 +269,16 @@ async function fetchText(url, options = {}) {
   return response.text();
 }
 
-async function readLimitedBody(response, maxBytes) {
+async function fetchBuffer(url, maxBytes = 2 * 1024 * 1024) {
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(20000),
+    headers: { accept: "*/*", "user-agent": "NorthstarHomeDashboard/0.1" },
+  });
+  if (!response.ok) throw new Error(`Data source returned ${response.status}`);
+  return readLimitedBody(response, maxBytes, true);
+}
+
+async function readLimitedBody(response, maxBytes, asBuffer = false) {
   const contentLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
     throw new Error("Data source response exceeded the size limit.");
@@ -282,8 +298,39 @@ async function readLimitedBody(response, maxBytes) {
     }
     chunks.push(Buffer.from(value));
   }
-  return Buffer.concat(chunks, totalBytes).toString("utf8");
+  const body = Buffer.concat(chunks, totalBytes);
+  return asBuffer ? body : body.toString("utf8");
 }
+
+// Calendar feeds can be large; limit size and only follow https redirects. The URL
+// itself is a secret and is never included in errors.
+async function fetchCalendarText(url) {
+  let currentUrl = new URL(url);
+  for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
+    const response = await fetch(currentUrl, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(15000),
+      headers: { accept: "text/calendar, */*", "user-agent": "NorthstarHomeDashboard/0.1" },
+    });
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      const location = response.headers.get("location");
+      await response.body?.cancel();
+      if (!location || redirectCount === 3) throw new Error("Agenda gaf een ongeldige doorverwijzing.");
+      const next = new URL(location, currentUrl);
+      if (next.protocol !== "https:" || next.username || next.password) throw new Error("Agenda verwees naar een onveilige link.");
+      currentUrl = next;
+      continue;
+    }
+    if (!response.ok) throw new Error(`Agenda gaf status ${response.status}.`);
+    return readLimitedBody(response, 5 * 1024 * 1024);
+  }
+  throw new Error("Agenda overschreed het aantal doorverwijzingen.");
+}
+
+const calendarService = createCalendarService({
+  fetchText: fetchCalendarText,
+  getCalendars: () => calendarsFromEnv(process.env),
+});
 
 async function fetchNewsContent(source, expectJson) {
   const initialUrl = new URL(source.url);
@@ -337,67 +384,36 @@ const newsService = createNewsService({
   onSourceError: (source, error) => console.error("News source failed:", source.id, error.name),
 });
 
-function parseCalendar(ics) {
-  const events = [...ics.matchAll(/BEGIN:VEVENT([\s\S]*?)END:VEVENT/g)]
-    .map(([_, block]) => {
-      const fields = {};
-      for (const line of block.replace(/\r?\n[ \t]/g, "").split(/\r?\n/)) {
-        const match = line.match(/^([A-Z-]+)((?:;[^:]+)*):([\s\S]*)$/);
-        if (!match) continue;
-        const [, key, parameters, value] = match;
-        fields[key] = { value, timezone: parameters.match(/;TZID=([^;]+)/)?.[1] ?? null };
-      }
-      const start = fields.DTSTART;
-      if (!start) return null;
-      const parsed = parseCalendarDate(start.value, start.timezone);
-      return {
-        title: (fields.SUMMARY?.value || "Calendar event").replace(/\\([,;\\])/g, "$1").replace(/\\n/gi, " "),
-        start: parsed.toISOString(),
-        location: fields.LOCATION?.value.replace(/\\([,;\\])/g, "$1") || null,
-      };
-    })
-    .filter((event) => event && new Date(event.start).getTime() >= Date.now() - 60 * 60 * 1000)
-    .sort((a, b) => new Date(a.start) - new Date(b.start))
-    .slice(0, 8);
-  return { events };
+// GitHub Contents API for the configured task file. The token is only sent to api.github.com
+// and never logged or returned.
+async function githubTasksRequest(method, body) {
+  const config = tasksConfigFromEnv(process.env);
+  if (!config) requireConfig(["GITHUB_TASKS_TOKEN", "GITHUB_TASKS_REPO"]);
+  const path = config.path.split("/").map(encodeURIComponent).join("/");
+  const response = await fetch(`https://api.github.com/repos/${config.repo}/contents/${path}`, {
+    method,
+    signal: AbortSignal.timeout(12000),
+    redirect: "error",
+    headers: {
+      accept: "application/vnd.github+json",
+      authorization: `Bearer ${config.token}`,
+      "x-github-api-version": "2022-11-28",
+      "user-agent": "NorthstarHomeDashboard/0.1",
+      ...(body ? { "content-type": "application/json" } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await readLimitedBody(response, 1024 * 1024);
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = null;
+  }
+  return { status: response.status, json };
 }
 
-function parseCalendarDate(value, timezone) {
-  if (/^\d{8}$/.test(value)) {
-    return new Date(Date.UTC(+value.slice(0, 4), +value.slice(4, 6) - 1, +value.slice(6, 8)));
-  }
-  const match = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/);
-  if (!match) throw new Error("Calendar contains an unsupported event date.");
-  const [, year, month, day, hour, minute, second, utc] = match;
-  const localParts = [+year, +month - 1, +day, +hour, +minute, +second];
-  if (utc || !timezone) return new Date(Date.UTC(...localParts));
-  let timestamp = Date.UTC(...localParts);
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  });
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const parts = Object.fromEntries(
-      formatter.formatToParts(new Date(timestamp)).map((part) => [part.type, Number(part.value)]),
-    );
-    const representedAsUtc = Date.UTC(
-      parts.year,
-      parts.month - 1,
-      parts.day,
-      parts.hour,
-      parts.minute,
-      parts.second,
-    );
-    timestamp += Date.UTC(...localParts) - representedAsUtc;
-  }
-  return new Date(timestamp);
-}
+const tasksService = createTasksService({ github: githubTasksRequest });
 
 // intervals.icu with the personal API key (basic auth, username "API_KEY"). The key is
 // only sent to intervals.icu and never logged or returned.
@@ -465,8 +481,7 @@ async function getHomeAssistant() {
 const apiRouteCache = new Map();
 const apiRouteInFlight = new Map();
 const sharedApiRouteTtl = new Map([
-  ["/api/weather", 5 * 60 * 1000],
-  ["/api/calendar", 5 * 60 * 1000],
+  ["/api/weather", 15 * 60 * 1000],
   ["/api/finance", 60 * 60 * 1000],
   ["/api/home-assistant", 5 * 60 * 1000],
   ["/api/projects", 30 * 60 * 1000],
@@ -475,6 +490,11 @@ const sharedApiRouteTtl = new Map([
   ["/api/sports/premier-league", 60 * 1000],
   ["/api/sports/belgian-football", 5 * 60 * 1000],
 ]);
+const imieHistoryService = createImieHistoryService({
+  fetchJson,
+  fetchBuffer,
+  isTradingTime: isXetraTradingTime,
+});
 const sportsService = createSportsService({
   fetchJson,
   loadExtraNews: (sourceId) => newsService.loadSource(sourceId),
@@ -531,6 +551,10 @@ async function routeApiUncached(url) {
       : sportsService.detail(sportRoute[1], options);
   }
 
+  if (url.pathname === "/api/economy/imie-history") {
+    return imieHistoryService.get(url.searchParams.get("range") ?? "1m");
+  }
+
   if (url.pathname === "/api/economy") {
     if (url.searchParams.has("refresh") && url.searchParams.get("refresh") !== "1") {
       const error = new Error("Unknown economy refresh option.");
@@ -563,19 +587,13 @@ async function routeApiUncached(url) {
     const query = new URLSearchParams({
       latitude: String(latitude),
       longitude: String(longitude),
-      current: "temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m",
+      current: WEATHER_CURRENT,
+      hourly: WEATHER_HOURLY,
+      daily: WEATHER_DAILY,
+      forecast_days: "7",
       timezone: "auto",
     });
-    const payload = await fetchJson(`https://api.open-meteo.com/v1/forecast?${query}`);
-    return {
-      location,
-      temperature: payload.current.temperature_2m,
-      apparentTemperature: payload.current.apparent_temperature,
-      humidity: payload.current.relative_humidity_2m,
-      windSpeed: payload.current.wind_speed_10m,
-      weatherCode: payload.current.weather_code,
-      isDay: Boolean(payload.current.is_day),
-    };
+    return mapForecast(await fetchJson(`https://api.open-meteo.com/v1/forecast?${query}`), location);
   }
 
   if (url.pathname === "/api/news") {
@@ -650,9 +668,14 @@ async function routeApiUncached(url) {
     return healthService.get({ athleteId: config.athleteId, refresh: url.searchParams.get("refresh") === "1" });
   }
 
+  if (url.pathname === "/api/tasks") {
+    if (!tasksConfigFromEnv(process.env)) requireConfig(["GITHUB_TASKS_TOKEN", "GITHUB_TASKS_REPO"]);
+    return tasksService.get({ refresh: url.searchParams.get("refresh") === "1" });
+  }
+
   if (url.pathname === "/api/calendar") {
-    requireConfig(["CALENDAR_ICS_URL"]);
-    return parseCalendar(await fetchText(process.env.CALENDAR_ICS_URL));
+    if (!isCalendarConfigured(process.env)) requireConfig(["CALENDAR_ICS_URLS"]);
+    return calendarService.get({ refresh: url.searchParams.get("refresh") === "1" });
   }
 
   if (url.pathname === "/api/finance") {
@@ -710,7 +733,7 @@ async function loadDailyBriefingInputs({ refresh = false } = {}) {
       path: `/api/news?category=${category}&since=7d&sort=relevant&limit=20`,
     })),
   ];
-  if (process.env.CALENDAR_ICS_URL) {
+  if (isCalendarConfigured(process.env)) {
     jobs.push({ key: "agenda", source: "Agenda · ICS", path: "/api/calendar" });
   }
 
@@ -722,7 +745,7 @@ async function loadDailyBriefingInputs({ refresh = false } = {}) {
   }));
   const inputs = {
     newsByCategory: {},
-    agendaConfigured: Boolean(process.env.CALENDAR_ICS_URL),
+    agendaConfigured: isCalendarConfigured(process.env),
     warnings: [],
   };
   results.forEach((result, index) => {
@@ -787,6 +810,94 @@ async function serveStatic(pathname, response) {
   }
 }
 
+const MAX_WRITE_BODY_BYTES = 2048;
+
+function readRequestBody(request, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    request.on("data", (chunk) => {
+      total += chunk.length;
+      if (total > maxBytes) {
+        const error = new Error("Verzoek is te groot.");
+        error.status = 413;
+        request.destroy();
+        reject(error);
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    request.on("error", reject);
+  });
+}
+
+function sendApiError(response, pathname, error) {
+  const status = error.status ?? 502;
+  if (error.code === "not_configured") {
+    return sendJson(response, status, { error: error.message, code: "not_configured" });
+  }
+  if (status >= 500) {
+    console.error("API request failed:", pathname, error.name);
+    return sendJson(response, status, { error: "Live gegevens zijn tijdelijk niet beschikbaar." });
+  }
+  return sendJson(response, status, { error: error.message || "Invalid request." });
+}
+
+// The only state-changing API route. Requires, in this order: POST, a configured
+// server, rate limit, same Origin as AUTH_URL, JSON content type, a small body, a valid
+// allow-listed session and Auth.js's double-submit CSRF token.
+async function handleTaskToggle(request, response, url) {
+  if (request.method !== "POST") {
+    response.setHeader("allow", "POST");
+    return sendJson(response, 405, { error: "Method not allowed." });
+  }
+  if (!authConfig) {
+    return sendJson(response, 503, { error: "Aanmelden is niet geconfigureerd op deze server." });
+  }
+  if (isRateLimited(request, "write", 30, 60_000)) {
+    return sendRateLimitResponse(response);
+  }
+  if (!isAllowedOrigin(request.headers.origin, process.env.AUTH_URL)) {
+    return sendJson(response, 403, { error: "Verzoek geweigerd." });
+  }
+  if (!String(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
+    return sendJson(response, 415, { error: "Verwacht JSON." });
+  }
+  if (Number(request.headers["content-length"] ?? 0) > MAX_WRITE_BODY_BYTES) {
+    return sendJson(response, 413, { error: "Verzoek is te groot." });
+  }
+
+  let user;
+  try {
+    user = await getAuthenticatedUser(request);
+  } catch (error) {
+    console.error("Session validation failed:", error.name);
+    return sendJson(response, 503, { error: "Authenticatie is tijdelijk niet beschikbaar." });
+  }
+  if (!user) return sendJson(response, 401, { error: "Aanmelden vereist." });
+
+  let body;
+  try {
+    body = JSON.parse(await readRequestBody(request, MAX_WRITE_BODY_BYTES));
+  } catch (error) {
+    return sendJson(response, error.status ?? 400, { error: error.status === 413 ? "Verzoek is te groot." : "Ongeldige JSON." });
+  }
+  if (!verifyCsrfToken({ cookieHeader: request.headers.cookie, cookieName: csrfCookieName, secret: process.env.AUTH_SECRET, bodyToken: body?.csrfToken })) {
+    return sendJson(response, 403, { error: "Verzoek geweigerd." });
+  }
+  if (typeof body.id !== "string" || !/^[a-f0-9]{16}$/.test(body.id) || typeof body.done !== "boolean") {
+    return sendJson(response, 400, { error: "Ongeldige taak." });
+  }
+
+  try {
+    if (!tasksConfigFromEnv(process.env)) requireConfig(["GITHUB_TASKS_TOKEN", "GITHUB_TASKS_REPO"]);
+    return sendJson(response, 200, await tasksService.toggle({ id: body.id, done: body.done }));
+  } catch (error) {
+    return sendApiError(response, url.pathname, error);
+  }
+}
+
 async function handleRequest(request, response) {
   applySecurityHeaders(response);
   let url;
@@ -806,6 +917,10 @@ async function handleRequest(request, response) {
 
   if (url.pathname === "/api/auth" || url.pathname.startsWith("/api/auth/")) {
     return handleAuthRequest(request, response, url);
+  }
+
+  if (url.pathname === "/api/tasks/toggle") {
+    return handleTaskToggle(request, response, url);
   }
 
   if (url.pathname.startsWith("/api/")) {
@@ -834,15 +949,7 @@ async function handleRequest(request, response) {
       if (result === null) return sendJson(response, 404, { error: "API route not found." });
       return sendJson(response, 200, result);
     } catch (error) {
-      const status = error.status ?? 502;
-      if (error.code === "not_configured") {
-        return sendJson(response, status, { error: error.message, code: "not_configured" });
-      }
-      if (status >= 500) {
-        console.error("API request failed:", url.pathname, error.name);
-        return sendJson(response, status, { error: "Live gegevens zijn tijdelijk niet beschikbaar." });
-      }
-      return sendJson(response, status, { error: error.message || "Invalid request." });
+      return sendApiError(response, url.pathname, error);
     }
   }
 
