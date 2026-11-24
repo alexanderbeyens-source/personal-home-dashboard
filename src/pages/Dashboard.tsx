@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { AppShell, type PageProps } from "../components/AppShell";
+import { AgendaDays, groupAgenda } from "../components/agenda";
 import { CompactStory } from "../components/briefing";
 import { ImieCard, MetricCard, PolicyRateCard } from "../components/economy";
 import { Icon } from "../components/Icon";
 import { TasksPanel } from "../components/TasksPanel";
+import { ImieChart } from "../components/ImieChart";
 import { Panel, ResourceState, SectionTitle } from "../components/Panel";
 import { FixtureList, LeagueTabs, PlayerLines, StandingsTable, isLeagueId, leagueLabel } from "../components/sports";
-import { LOCALE, formatNumber, formatTime, weatherLabel } from "../format";
+import { LOCALE, formatNumber, formatTemperature, formatTime, weatherIcon, weatherLabel } from "../format";
+import { DayList, Dayparts } from "../components/weather";
 import { useLiveResource } from "../hooks/useLiveResource";
 import type {
   CalendarData,
@@ -56,49 +59,67 @@ function BriefingSummary() {
 }
 
 function WeatherPanel() {
-  const weather = useLiveResource<WeatherData>("/api/weather", 20 * 60 * 1000, "/api/weather?refresh=1");
+  const weather = useLiveResource<WeatherData>("/api/weather", 15 * 60 * 1000, "/api/weather?refresh=1");
   const data = weather.data;
+  const today = data?.observedAt?.slice(0, 10) ?? "";
   return (
-    <Panel title="Weer" eyebrow={data?.location ?? "Locatie"} icon={data && data.weatherCode < 4 ? "sun" : "cloud"} className="weather-panel" resource={weather}>
+    <Panel
+      title="Weer"
+      eyebrow={data?.location ?? "Locatie"}
+      icon={data ? weatherIcon(data.weatherCode, data.isDay) : "cloud"}
+      className="weather-panel"
+      resource={weather}
+      moreHref="/weer"
+      moreLabel="Weerdetails"
+    >
       {data ? (
-        <div className="weather">
-          <p className="weather-temp">{Math.round(data.temperature)}°</p>
-          <div>
-            <p className="weather-label">{weatherLabel(data.weatherCode, data.isDay)}</p>
-            <p className="weather-detail">Voelt als {Math.round(data.apparentTemperature)}°</p>
-            <p className="weather-detail">
-              <Icon name="wind" size={15} className="inline-icon" /> {Math.round(data.windSpeed)} km/u
-              <span aria-hidden="true"> · </span>
-              <Icon name="drop" size={14} className="inline-icon" /> {data.humidity}%
-            </p>
+        <>
+          <div className="weather">
+            <p className="weather-temp">{Math.round(data.temperature)}°</p>
+            <div>
+              <p className="weather-label">{weatherLabel(data.weatherCode, data.isDay)}</p>
+              <p className="weather-detail">
+                Voelt als {Math.round(data.apparentTemperature)}°
+                {data.today && <> · vandaag {formatTemperature(data.today.temperatureMin)} tot {formatTemperature(data.today.temperatureMax)}</>}
+              </p>
+              <p className="weather-detail">
+                <Icon name="wind" size={15} className="inline-icon" /> {Math.round(data.windSpeed)} km/u
+                <span aria-hidden="true"> · </span>
+                <Icon name="drop" size={14} className="inline-icon" /> {data.humidity}%
+              </p>
+            </div>
           </div>
-        </div>
+          {data.dayparts && data.dayparts.length > 0 && <Dayparts parts={data.dayparts} />}
+          {data.nextDays && data.nextDays.length > 0 && <DayList days={data.nextDays} today={today} />}
+        </>
       ) : (
         <ResourceState loading={weather.loading} empty="Weergegevens zijn momenteel niet beschikbaar." />
       )}
-      <p className="panel-source">Open-Meteo</p>
     </Panel>
   );
 }
 
 function AgendaPanel() {
   const agenda = useLiveResource<CalendarData>("/api/calendar", 5 * 60 * 1000, "/api/calendar?refresh=1");
-  const events = agenda.data?.events ?? [];
+  const days = agenda.data ? groupAgenda(agenda.data.events) : [];
+  const unavailable = agenda.data?.calendars?.filter((calendar) => calendar.status === "unavailable") ?? [];
   return (
-    <Panel title="Agenda" eyebrow="Komende afspraken" icon="calendar" className="agenda-panel" resource={agenda}>
-      {events.length ? (
-        <ul className="agenda-list">
-          {events.slice(0, 4).map((event) => (
-            <li key={`${event.start}-${event.title}`}>
-              <time dateTime={event.start}>{formatTime(event.start)}</time>
-              <span><strong>{event.title}</strong>{event.location && <small>{event.location}</small>}</span>
-            </li>
-          ))}
-        </ul>
+    <Panel
+      title="Agenda"
+      eyebrow="Eerstvolgende afspraken"
+      icon="calendar"
+      className="agenda-panel"
+      resource={agenda}
+      moreHref={agenda.data ? "/agenda" : undefined}
+      moreLabel="Volledige agenda"
+    >
+      {unavailable.length > 0 && <p className="inline-warning">Niet geladen: {unavailable.map((calendar) => calendar.name).join(", ")}</p>}
+      {days.length ? (
+        <AgendaDays days={days} maxDays={2} maxPerDay={4} />
       ) : agenda.notConfigured ? (
-        <p className="empty-state">Voeg de privé-ICS-feed van je agenda toe aan de serveromgeving om je afspraken hier te zien.</p>
+        <p className="empty-state">Voeg de openbare ICS-links van je agenda's toe aan de serveromgeving om je afspraken hier te zien.</p>
       ) : (
-        <ResourceState loading={agenda.loading} empty="Geen komende afspraken." />
+        <ResourceState loading={agenda.loading} empty="Geen afspraken in de komende twee weken." />
       )}
     </Panel>
   );
@@ -200,6 +221,7 @@ function EconomySummary() {
       moreLabel="Alle economische data"
     >
       <ImieCard data={data} />
+      <ImieChart compact defaultRange="1m" />
       <div className="metric-grid compact">
         {deposit ? <PolicyRateCard rate={deposit} compact /> : <MetricCard title="ECB-depositorente" metric={null} compact />}
         <MetricCard title="Inflatie België" metric={data?.belgiumInflation ?? null} compact />

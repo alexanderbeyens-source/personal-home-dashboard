@@ -8,6 +8,40 @@ export interface LiveResource<T> {
   refresh: () => Promise<void>;
 }
 
+export interface WeatherDay {
+  date: string;
+  weatherCode: number | null;
+  temperatureMax: number | null;
+  temperatureMin: number | null;
+  precipitationSum: number | null;
+  precipitationProbabilityMax: number | null;
+  sunrise: string | null;
+  sunset: string | null;
+  uvIndexMax: number | null;
+  windSpeedMax: number | null;
+}
+
+export interface WeatherDaypart {
+  id: "morning" | "afternoon" | "evening";
+  label: string;
+  from: number;
+  to: number;
+  averageTemperature: number | null;
+  weatherCode: number | null;
+  precipitationProbabilityMax: number | null;
+  status: "past" | "current" | "upcoming";
+}
+
+export interface WeatherHour {
+  time: string;
+  temperature: number | null;
+  precipitationProbability: number | null;
+  precipitation: number | null;
+  weatherCode: number | null;
+  windSpeed: number | null;
+  isDay: boolean | null;
+}
+
 export interface WeatherData {
   location: string;
   temperature: number;
@@ -16,6 +50,12 @@ export interface WeatherData {
   windSpeed: number;
   weatherCode: number;
   isDay: boolean;
+  observedAt?: string;
+  today?: WeatherDay | null;
+  dayparts?: WeatherDaypart[];
+  nextDays?: WeatherDay[];
+  days?: WeatherDay[];
+  hours?: WeatherHour[];
 }
 
 export interface NewsArticle {
@@ -107,13 +147,22 @@ export interface SportsData {
 }
 
 export interface CalendarEvent {
+  id?: string;
   title: string;
   start: string;
+  end?: string;
+  allDay?: boolean;
+  startDate?: string | null;
   location: string | null;
+  calendar?: string;
+  color?: string;
 }
 
 export interface CalendarData {
   events: CalendarEvent[];
+  calendars?: { name: string; color: string; status: "ok" | "stale" | "unavailable" }[];
+  warnings?: { source: string; message: string; stale: boolean }[];
+  rangeEnd?: string;
 }
 
 export interface HomeData {
@@ -373,4 +422,23 @@ export interface TasksData {
   total: number;
   stale: boolean;
   updatedAt: string;
+}
+
+export type ImieRange = "1d" | "5d" | "1m" | "3m" | "6m" | "ytd" | "1y" | "3y" | "5y" | "10y";
+
+export interface ImieHistory {
+  range: ImieRange;
+  basis: "xetra-intraday" | "nav-eur";
+  currency: "EUR";
+  points: { t: string; v: number }[];
+  changePercent: number | null;
+  from: string | null;
+  to: string | null;
+  session?: string | null;
+  previousClose?: number | null;
+  source: string;
+  sourceUrl: string;
+  note: string;
+  stale: boolean;
+  splits: { date: string; ratio: number }[];
 }

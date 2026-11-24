@@ -162,6 +162,124 @@ describe("Dashboard widgets", () => {
   });
 });
 
+describe("Agenda widget", () => {
+  beforeEach(() => window.history.replaceState(null, "", "/"));
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows events from several calendars and names a calendar that failed", async () => {
+    const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    mockApi({
+      "/api/calendar": () => jsonResponse({
+        events: [
+          { id: "1", title: "Tandarts", start: soon, end: soon, allDay: false, startDate: null, location: "Diest", calendar: "Gezin", color: "#4f8cff" },
+        ],
+        calendars: [
+          { name: "Gezin", color: "#4f8cff", status: "ok" },
+          { name: "Werk", color: "#ff6a1a", status: "unavailable" },
+        ],
+        warnings: [{ source: "Werk", message: "Agenda tijdelijk niet beschikbaar.", stale: false }],
+      }),
+    });
+    render(<App />);
+
+    const panel = (await screen.findByRole("heading", { name: "Agenda" })).closest("section") as HTMLElement;
+    expect(await within(panel).findByText("Tandarts")).toBeTruthy();
+    expect(within(panel).getByText(/Gezin · .*Diest/)).toBeTruthy();
+    expect(within(panel).getByText("Niet geladen: Werk")).toBeTruthy();
+    expect(within(panel).getByRole("link", { name: /Volledige agenda/ }).getAttribute("href")).toBe("/agenda");
+  });
+});
+
+describe("Weather widget", () => {
+  beforeEach(() => window.history.replaceState(null, "", "/"));
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows dayparts, the next days and a link to the weather page", async () => {
+    const day = (date: string, max: number) => ({
+      date, weatherCode: 3, temperatureMax: max, temperatureMin: -1, precipitationSum: 0, precipitationProbabilityMax: 20,
+      sunrise: `${date}T08:10`, sunset: `${date}T16:42`, uvIndexMax: 1, windSpeedMax: 12,
+    });
+    mockApi({
+      "/api/weather": () => jsonResponse({
+        location: "Diest", temperature: 1, apparentTemperature: -3, humidity: 74, windSpeed: 6, weatherCode: 2, isDay: true,
+        observedAt: "2026-11-24T11:15",
+        today: day("2026-11-24", 4),
+        dayparts: [
+          { id: "morning", label: "Ochtend", from: 6, to: 12, averageTemperature: 0.4, weatherCode: 45, precipitationProbabilityMax: 0, status: "current" },
+          { id: "afternoon", label: "Middag", from: 12, to: 18, averageTemperature: 3.2, weatherCode: 3, precipitationProbabilityMax: 10, status: "upcoming" },
+          { id: "evening", label: "Avond", from: 18, to: 24, averageTemperature: null, weatherCode: null, precipitationProbabilityMax: null, status: "upcoming" },
+        ],
+        nextDays: [day("2026-11-25", 2), day("2026-11-26", 5), day("2026-11-27", 6)],
+        days: [], hours: [],
+      }),
+    });
+    render(<App />);
+
+    const panel = (await screen.findByRole("heading", { name: "Weer" })).closest("section") as HTMLElement;
+    await within(panel).findByText("Ochtend");
+    expect(within(panel).getByText("3°")).toBeTruthy();
+    expect(within(panel).getAllByText("—").length).toBeGreaterThan(0);
+    expect(within(panel).getByText("Morgen")).toBeTruthy();
+    expect(within(panel).getByRole("link", { name: /Weerdetails/ }).getAttribute("href")).toBe("/weer");
+  });
+});
+
+describe("IMIE chart", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/economie");
+    window.localStorage.clear();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("loads the chosen range and shows the change with an honest source label", async () => {
+    const requested: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/api/auth/session") return jsonResponse({ user: { id: "1" } });
+      if (url.pathname === "/api/auth/csrf") return jsonResponse({ csrfToken: "csrf" });
+      if (url.pathname === "/api/economy/imie-history") {
+        const range = url.searchParams.get("range") ?? "";
+        requested.push(range);
+        return jsonResponse({
+          range,
+          basis: "nav-eur",
+          currency: "EUR",
+          points: [{ t: "2025-11-21", v: 9.631 }, { t: "2026-05-21", v: 10.5 }, { t: "2026-11-23", v: 11.212 }],
+          changePercent: range === "1y" ? 16.41 : -3.51,
+          from: "2025-11-21",
+          to: "2026-11-23",
+          source: "State Street SPDR (NAV) · ECB (EUR/USD)",
+          sourceUrl: "https://www.ssga.com/",
+          note: "Officiële dagelijkse NAV in USD, omgerekend naar EUR met de ECB-referentiekoers.",
+          stale: false,
+          splits: [],
+        });
+      }
+      return jsonResponse({ error: "Live gegevens zijn tijdelijk niet beschikbaar." }, 503);
+    }));
+    render(<App />);
+
+    const summary = () => document.querySelector(".imie-chart-summary")?.textContent?.replace(/\s+/g, " ") ?? "";
+    await waitFor(() => expect(summary()).toMatch(/▼ ?3,51 %/));
+    fireEvent.click(screen.getByRole("button", { name: "1J" }));
+    await waitFor(() => expect(summary()).toMatch(/▲ ?16,41 %/));
+    expect(screen.getByRole("button", { name: "1J" }).getAttribute("aria-pressed")).toBe("true");
+    expect(requested).toContain("1y");
+    expect(screen.getByRole("img", { name: /IMIE 1 jaar/ })).toBeTruthy();
+    expect(screen.getByText(/omgerekend naar EUR/)).toBeTruthy();
+    expect(window.localStorage.getItem("northstar.imie-range")).toBe("1y");
+  });
+});
+
 describe("Tasks widget", () => {
   beforeEach(() => window.history.replaceState(null, "", "/"));
   afterEach(() => {

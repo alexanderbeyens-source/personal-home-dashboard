@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { href: "/news", label: "Nieuws" },
   { href: "/sport", label: "Sport" },
   { href: "/economie", label: "Economie" },
+  { href: "/weer", label: "Weer" },
 ] as const;
 
 export function currentPath() {

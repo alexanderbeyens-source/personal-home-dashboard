@@ -93,6 +93,7 @@ describe("protected API routes", () => {
       CALENDAR_ICS_URL: "",
       GITHUB_TASKS_TOKEN: "",
       GITHUB_TASKS_REPO: "",
+      CALENDAR_ICS_URLS: "",
       HOME_ASSISTANT_URL: "",
       HOME_ASSISTANT_TOKEN: "",
     });
