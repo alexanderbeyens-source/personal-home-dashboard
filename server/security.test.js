@@ -191,4 +191,31 @@ describe("protected API routes", () => {
       expect(text).not.toContain("CALENDAR_ICS");
     }
   });
+
+  it("explains an invalid calendar configuration without exposing the configured links", async () => {
+    const server = await startServer({
+      CALENDAR_ICS_URL: "",
+      CALENDAR_ICS_URLS: "[{\u201Cname\u201D:\u201CGezin\u201D,\u201Curl\u201D:\u201Cwebcal://p01-caldav.icloud.com/published/2/SECRET-CONFIG-TOKEN-91b\u201D}]",
+    });
+    child = server.child;
+    const sessionToken = await encode({
+      token: { githubUserId: allowedGithubId },
+      secret: authSecret,
+      salt: sessionCookieName,
+    });
+    const response = await fetch(`${server.baseUrl}/api/calendar`, { headers: { cookie: `${sessionCookieName}=${sessionToken}` } });
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.code).toBe("invalid_config");
+    expect(body.error).toMatch(/gekrulde aanhalingstekens/);
+    for (let attempt = 0; attempt < 20 && !child.logs.includes("API request failed"); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(child.logs).toContain("API request failed: /api/calendar kind=config reason=smart-quotes");
+    for (const text of [child.logs, JSON.stringify(body)]) {
+      expect(text).not.toContain("SECRET-CONFIG-TOKEN");
+      expect(text).not.toContain("icloud");
+      expect(text).not.toContain("CALENDAR_ICS");
+    }
+  });
 });

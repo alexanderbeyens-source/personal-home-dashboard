@@ -133,6 +133,9 @@ export function tasksConfigFromEnv(env) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || !/^[A-Za-z0-9_./-]+\.md$/.test(path) || path.split("/").includes("..") || path.startsWith("/")) {
     const error = new Error("De takenkoppeling is ongeldig ingesteld.");
     error.status = 500;
+    error.kind = "config";
+    error.code = "invalid_config";
+    error.reason = "invalid-repo";
     throw error;
   }
   return { token, repo, path };

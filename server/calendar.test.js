@@ -181,3 +181,30 @@ describe("calendar service", () => {
     await expect(service.get()).rejects.toMatchObject({ status: 502 });
   });
 });
+
+describe("calendar configuration diagnostics", () => {
+  const secret = "p01-caldav.icloud.com/published/2/SECRET-TOKEN-abc";
+  const cases = [
+    ["smart quotes", `[{\u201Cname\u201D:\u201CGezin\u201D,\u201Curl\u201D:\u201Cwebcal://${secret}\u201D}]`, "smart-quotes", /gekrulde aanhalingstekens/],
+    ["quoted value", `'[{"name":"Gezin","url":"webcal://${secret}"}]'`, "quoted", /extra aanhalingstekens/],
+    ["single object", `{"name":"Gezin","url":"webcal://${secret}"}`, "not-a-list", /zet \[ en \]/],
+    ["wrong key", `[{"name":"Gezin","link":"webcal://${secret}"}]`, "missing-url:1", /Agenda 1 heeft geen "url"-veld/],
+    ["http link", `[{"name":"A","url":"webcal://${secret}"},{"name":"B","url":"http://${secret}"}]`, "invalid-url:2", /Agenda 2 heeft geen geldige/],
+    ["broken JSON", `[{"name":"Gezin","url":"webcal://${secret}"`, "invalid-json", /geen geldige JSON/],
+    ["empty list", "[]", "list-size", /1 tot 12/],
+    ["string entry", `["webcal://${secret}"]`, "invalid-entry:1", /geen object/],
+  ];
+
+  it.each(cases)("explains %s with a safe reason and message", (_, value, reason, message) => {
+    let error;
+    try {
+      calendarsFromEnv({ CALENDAR_ICS_URLS: value });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toMatchObject({ status: 500, kind: "config", code: "invalid_config", reason });
+    expect(error.message).toMatch(message);
+    expect(error.message).not.toContain("SECRET");
+    expect(error.message).not.toContain("icloud");
+  });
+});

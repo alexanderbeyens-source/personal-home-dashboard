@@ -383,3 +383,20 @@ describe("Health widget", () => {
     expect(within(panel).getByText(/Lopen · 30 min · 5,2 km · gem\. 148 bpm/)).toBeTruthy();
   });
 });
+
+describe("Agenda configuration errors", () => {
+  beforeEach(() => window.history.replaceState(null, "", "/"));
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows the safe explanation instead of a generic failure", async () => {
+    const message = "De agendaconfiguratie bevat gekrulde aanhalingstekens (“ ”). Gebruik gewone rechte aanhalingstekens (\").";
+    mockApi({ "/api/calendar": () => jsonResponse({ error: message, code: "invalid_config" }, 500) });
+    render(<App />);
+    const panel = (await screen.findByRole("heading", { name: "Agenda" })).closest("section") as HTMLElement;
+    expect((await within(panel).findAllByText(`Laden mislukt: ${message}`)).length).toBeGreaterThan(0);
+    expect(within(panel).queryByText(/tijdelijk niet beschikbaar/)).toBeNull();
+  });
+});

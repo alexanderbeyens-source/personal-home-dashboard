@@ -20,6 +20,9 @@ export function healthConfigFromEnv(env) {
   if (!/^i?\d{1,12}$/.test(athleteId)) {
     const error = new Error("De gezondheidskoppeling is ongeldig ingesteld.");
     error.status = 500;
+    error.kind = "config";
+    error.code = "invalid_config";
+    error.reason = "invalid-athlete-id";
     throw error;
   }
   return { athleteId, apiKey };
