@@ -69,12 +69,12 @@ The calendar and Home Assistant cards show a connection state until configured. 
 
 ## Task list
 
-Tasks live in a Markdown file in a private GitHub repository, so you can edit them by hand or ask Claude (Claude Code, or Claude.ai with the GitHub connector) to add, change or remove tasks. The dashboard reads the file (60-second cache) and can tick tasks off; every tick is a normal commit in that repository. Start from `docs/tasks.example.md`.
+Tasks live in a Markdown file in a private GitHub repository, so you can edit them by hand or ask Claude (Claude Code, or Claude.ai with the GitHub connector) to add, change or remove tasks. The dashboard reads the file (60-second cache), can tick tasks off and add new ones (on the dashboard and on `/taken`); every tick or new task is a normal commit in that repository. Start from `docs/tasks.example.md`.
 
 - Sections `## Dagelijks`, `## Wekelijks`, `## Maandelijks` and `## Eenmalig`; other headings and text are left untouched.
 - `- [x] Task (2026-11-24)` records when a task was last done. A recurring task counts as done when that date is in the current day, week (Monday to Sunday) or month, so daily/weekly/monthly tasks reopen by themselves. `@2026-12-01` in a task is a deadline; overdue deadlines are highlighted.
 - Setup: create a private repo (for example `northstar-tasks`) with `tasks.md`, create a **fine-grained** personal access token limited to that one repository with *Contents: read and write*, and set `GITHUB_TASKS_TOKEN`, `GITHUB_TASKS_REPO` (`owner/repo`) and optionally `GITHUB_TASKS_PATH` in Render. The token stays on the server.
-- Security: `POST /api/tasks/toggle` is the only state-changing route. It requires the allow-listed session, an `Origin` equal to `AUTH_URL`, Auth.js's double-submit CSRF token in the JSON body, a body of at most 2 kB and has its own rate limit (30/min). It can only flip one existing checkbox line; it cannot create, delete or rewrite other content.
+- Security: `POST /api/tasks/toggle` and `POST /api/tasks/add` are the only state-changing routes. Both go through the same check: the allow-listed session, an `Origin` equal to `AUTH_URL`, Auth.js's double-submit CSRF token in the JSON body, a body of at most 2 kB and their own rate limit (30/min). Toggle can only flip one existing checkbox line. Add inserts one new single-line `- [ ] …` task (at most 300 characters, newlines and control characters removed, optional `@date` deadline only for `Eenmalig`) after the last task of the chosen section, or appends that section heading if it is missing. Neither route can delete or rewrite other content.
 
 ## Health data (Garmin via intervals.icu)
 

@@ -162,6 +162,28 @@ describe("protected API routes", () => {
     const accepted = await post(valid);
     expect(accepted.status).toBe(503);
     expect(await accepted.json()).toEqual({ error: "Deze koppeling is niet geconfigureerd op de server.", code: "not_configured" });
+
+    const newTask = { section: "once", text: "Tandarts bellen", due: "2026-12-01", csrfToken };
+    const add = (body, headers = {}) => fetch(`${baseUrl}/api/tasks/add`, {
+      method: "POST",
+      headers: { origin: baseUrl, "content-type": "application/json", cookie: `${session}; ${csrfCookie}`, ...headers },
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    });
+    expect((await fetch(`${baseUrl}/api/tasks/add`)).status).toBe(405);
+    expect((await add(newTask, { cookie: csrfCookie })).status).toBe(401);
+    expect((await add(newTask, { origin: "https://evil.example" })).status).toBe(403);
+    expect((await add({ ...newTask, csrfToken: "d".repeat(64) })).status).toBe(403);
+    expect((await add(newTask, { cookie: session })).status).toBe(403);
+    expect((await add("null")).status).toBe(403);
+    expect((await add(newTask, { "content-type": "text/plain" })).status).toBe(415);
+    expect((await add({ ...newTask, text: "x".repeat(3000) })).status).toBe(413);
+    const invalid = await add({ ...newTask, section: "notes" });
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toEqual({ error: "Kies een geldige rubriek." });
+
+    const added = await add(newTask);
+    expect(added.status).toBe(503);
+    expect(await added.json()).toEqual({ error: "Deze koppeling is niet geconfigureerd op de server.", code: "not_configured" });
   });
 
   it("logs why a calendar failed without logging its secret link", async () => {

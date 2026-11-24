@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { isAllowedOrigin, verifyCsrfToken } from "./csrf.js";
-import { createTasksService, parseTasks, periodStart, publicTasks, tasksConfigFromEnv, toggleTask } from "./tasks.js";
+import { addTask, createTasksService, parseTasks, periodStart, publicTasks, tasksConfigFromEnv, toggleTask } from "./tasks.js";
 
 const FILE = [
   "# Taken",
@@ -86,6 +86,49 @@ describe("task parsing", () => {
   });
 });
 
+describe("adding tasks", () => {
+  function inserted(before, after) {
+    const a = before.split("\n");
+    const b = after.split("\n");
+    const index = b.findIndex((line, i) => line !== a[i]);
+    expect([...b.slice(0, index), ...b.slice(index + 1)]).toEqual(a);
+    return { index, line: b[index] };
+  }
+
+  it("inserts after the last task of the section and keeps the rest byte for byte", () => {
+    expect(inserted(FILE, addTask(FILE, { section: "daily", text: "Wandelen" }).markdown)).toEqual({ index: 8, line: "- [ ] Wandelen" });
+    expect(inserted(FILE, addTask(FILE, { section: "weekly", text: "Was doen" }).markdown)).toEqual({ index: 12, line: "- [ ] Was doen" });
+    const once = addTask(FILE, { section: "once", text: "  Belasting\n## Dagelijks\n- [x] indienen ", due: "2026-12-15" });
+    expect(inserted(FILE, once.markdown)).toEqual({ index: 21, line: "- [ ] Belasting ## Dagelijks - [x] indienen @2026-12-15" });
+    expect(once.task).toEqual({ section: "once", text: "Belasting ## Dagelijks - [x] indienen" });
+    const item = publicTasks(parseTasks(once.markdown, TODAY), TODAY).sections[3].items.at(-1);
+    expect(item).toMatchObject({ text: "Belasting ## Dagelijks - [x] indienen", due: "2026-12-15", done: false });
+  });
+
+  it("puts a task under an empty heading and creates a missing section at the end", () => {
+    expect(addTask("## Wekelijks\n\n## Eenmalig\n", { section: "weekly", text: "A" }).markdown).toBe("## Wekelijks\n- [ ] A\n\n## Eenmalig\n");
+    expect(addTask("# Taken\n\n## Dagelijks\n- [ ] B\n\n", { section: "monthly", text: "C" }).markdown).toBe("# Taken\n\n## Dagelijks\n- [ ] B\n\n## Maandelijks\n- [ ] C\n");
+    expect(addTask("", { section: "once", text: "D" }).markdown).toBe("## Eenmalig\n- [ ] D\n");
+    expect(addTask("## Dagelijks\r\n- [ ] B\r\n", { section: "daily", text: "E" }).markdown).toBe("## Dagelijks\r\n- [ ] B\r\n- [ ] E\r\n");
+  });
+
+  it("rejects invalid input", () => {
+    expect(() => addTask(FILE, { section: "notes", text: "A" })).toThrow(/rubriek/);
+    expect(() => addTask(FILE, { section: "daily", text: "  \n " })).toThrow(/Geef een taak/);
+    expect(() => addTask(FILE, { section: "daily", text: 42 })).toThrow(/Geef een taak/);
+    expect(() => addTask(FILE, { section: "daily", text: "x".repeat(301) })).toThrow(/300/);
+    expect(() => addTask(FILE, { section: "daily", text: "Iets (2026-11-01)" })).toThrow(/haakjes/);
+    expect(() => addTask(FILE, { section: "daily", text: "A", due: "2026-12-01" })).toThrow(/eenmalige/);
+    expect(() => addTask(FILE, { section: "once", text: "A", due: "2026-02-30" })).toThrow(/Ongeldige deadline/);
+    expect(() => addTask(FILE, { section: "once", text: "A @2026-12-01", due: "2026-12-02" })).toThrow(/ofwel/);
+    try {
+      addTask(FILE, { section: "once", text: "" });
+    } catch (error) {
+      expect(error.status).toBe(400);
+    }
+  });
+});
+
 describe("tasks service", () => {
   const now = () => Date.parse("2026-11-24T10:00:00Z");
 
@@ -119,6 +162,21 @@ describe("tasks service", () => {
     expect(state.puts[0].message).toBe("Afgevinkt via Northstar: Lezen");
     expect(state.markdown).toContain("- [x] Lezen (2026-11-24)");
     expect(updated.sections[0].items.find((item) => item.text === "Lezen").done).toBe(true);
+  });
+
+  it("adds a task with a commit and returns the updated list", async () => {
+    const { state, github } = fakeGithub(FILE);
+    const service = createTasksService({ github, now });
+    const updated = await service.add({ section: "once", text: "Tandarts bellen", due: "2026-11-28" });
+    expect(state.puts).toHaveLength(1);
+    expect(state.puts[0].message).toBe("Toegevoegd via Northstar: Tandarts bellen");
+    expect(state.markdown).toContain("- [ ] Tandarts bellen @2026-11-28\n");
+    expect(updated.sections[3].items.at(-1)).toMatchObject({ text: "Tandarts bellen", due: "2026-11-28" });
+    expect(updated.total).toBe(11);
+
+    github.mockClear();
+    await expect(service.add({ section: "once", text: "" })).rejects.toMatchObject({ status: 400 });
+    expect(github).not.toHaveBeenCalled();
   });
 
   it("keeps the last list when GitHub fails and reports a missing file", async () => {

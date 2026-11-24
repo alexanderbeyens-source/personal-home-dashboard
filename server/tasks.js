@@ -125,6 +125,75 @@ export function toggleTask(markdown, { id, done, today }) {
   return { markdown: parsed.lines.join(parsed.eol), task: { ...task, done } };
 }
 
+function badTask(message) {
+  const error = new Error(message);
+  error.status = 400;
+  return error;
+}
+
+function isRealDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T12:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+// Validates user input for a new task and returns the text that goes after "- [ ] ".
+export function newTaskLine({ section, text, due }) {
+  const definition = SECTIONS.find((entry) => entry.id === section);
+  if (!definition) throw badTask("Kies een geldige rubriek.");
+  if (typeof text !== "string") throw badTask("Geef een taak in.");
+  // One line, no control characters: a newline could inject headings or extra tasks.
+  const clean = text.replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!clean) throw badTask("Geef een taak in.");
+  if (clean.length > MAX_TEXT) throw badTask(`Een taak mag hoogstens ${MAX_TEXT} tekens lang zijn.`);
+  if (DONE_SUFFIX.test(clean)) throw badTask("Een taak mag niet eindigen op een datum tussen haakjes.");
+  if (due !== undefined && due !== null && due !== "") {
+    if (section !== "once") throw badTask("Een deadline kan alleen bij een eenmalige taak.");
+    if (typeof due !== "string" || !isRealDate(due)) throw badTask("Ongeldige deadline.");
+    if (DUE.test(clean)) throw badTask("Geef de deadline ofwel in de tekst ofwel in het datumveld.");
+    return { definition, body: `${clean} @${due}` };
+  }
+  return { definition, body: clean };
+}
+
+// Inserts the task after the last task of its section (or right under the heading), or
+// appends a new section heading when the file has none. Every other line stays untouched.
+export function addTask(markdown, input) {
+  const { definition, body } = newTaskLine(input);
+  const eol = markdown.includes("\r\n") ? "\r\n" : "\n";
+  const lines = markdown.split(/\r?\n/);
+  let insertAt = -1;
+  let inSection = false;
+  let indent = "- ";
+  for (let index = 0; index < lines.length; index++) {
+    const heading = lines[index].match(/^#{1,6}\s+(.+?)\s*#*\s*$/);
+    if (heading) {
+      if (inSection) break; // only the first matching section is used
+      inSection = definition.match.test(heading[1].trim());
+      if (inSection) insertAt = index + 1;
+      continue;
+    }
+    const task = inSection && lines[index].match(TASK_LINE);
+    if (task) {
+      insertAt = index + 1;
+      indent = task[1].slice(0, -1);
+    }
+  }
+  const line = `${indent}[ ] ${body}`;
+  if (insertAt === -1) {
+    const trailing = lines.length > 1 && lines[lines.length - 1] === "";
+    if (trailing) lines.pop();
+    while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+    if (lines.length) lines.push("");
+    lines.push(`## ${definition.title}`, line);
+    if (trailing || markdown === "") lines.push("");
+  } else {
+    lines.splice(insertAt, 0, line);
+  }
+  const text = body.replace(DUE, " ").replace(/\s+/g, " ").trim();
+  return { markdown: lines.join(eol), task: { section: definition.id, text } };
+}
+
 export function tasksConfigFromEnv(env) {
   const token = env.GITHUB_TASKS_TOKEN?.trim();
   const repo = env.GITHUB_TASKS_REPO?.trim();
@@ -182,14 +251,15 @@ export function createTasksService({ github, now = () => Date.now(), ttlMs = 60 
     return inFlight;
   }
 
-  async function toggle({ id, done }) {
-    const today = localDate(now());
+  // Reads the file, applies change(markdown) and commits against the read sha. A 409/422
+  // means the file changed in between: re-read and retry, at most three times.
+  async function commit(change) {
     for (let attempt = 0; attempt < 3; attempt++) {
       const file = await readFile();
-      const { markdown, task } = toggleTask(file.markdown, { id, done, today });
+      const { markdown, message } = change(file.markdown);
       if (markdown === file.markdown) break;
       const { status } = await github("PUT", {
-        message: `${done ? "Afgevinkt" : "Heropend"} via Northstar: ${task.text.slice(0, 60)}`,
+        message,
         content: Buffer.from(markdown, "utf8").toString("base64"),
         sha: file.sha,
       });
@@ -210,5 +280,21 @@ export function createTasksService({ github, now = () => Date.now(), ttlMs = 60 
     return get({ refresh: true });
   }
 
-  return { get, toggle };
+  function toggle({ id, done }) {
+    const today = localDate(now());
+    return commit((current) => {
+      const { markdown, task } = toggleTask(current, { id, done, today });
+      return { markdown, message: `${done ? "Afgevinkt" : "Heropend"} via Northstar: ${task.text.slice(0, 60)}` };
+    });
+  }
+
+  async function add(input) {
+    newTaskLine(input); // reject invalid input before contacting GitHub
+    return commit((current) => {
+      const { markdown, task } = addTask(current, input);
+      return { markdown, message: `Toegevoegd via Northstar: ${task.text.slice(0, 60)}` };
+    });
+  }
+
+  return { get, toggle, add };
 }
