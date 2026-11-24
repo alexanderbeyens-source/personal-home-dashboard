@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LiveResource } from "../types";
 
+class ResourceError extends Error {
+  notConfigured: boolean;
+
+  constructor(message: string, notConfigured: boolean) {
+    super(message);
+    this.notConfigured = notConfigured;
+  }
+}
+
 export function useLiveResource<T>(
   url: string,
   refreshInterval = 5 * 60 * 1000,
@@ -11,6 +20,7 @@ export function useLiveResource<T>(
     loading: true,
     refreshing: false,
     error: null,
+    notConfigured: false,
     updatedAt: null,
   });
   const refreshRef = useRef<() => Promise<void>>(async () => {});
@@ -26,6 +36,7 @@ export function useLiveResource<T>(
       loading: true,
       refreshing: false,
       error: null,
+      notConfigured: false,
       updatedAt: null,
     });
 
@@ -39,6 +50,7 @@ export function useLiveResource<T>(
         loading: current.data === null,
         refreshing: current.data !== null,
         error: null,
+        notConfigured: false,
       }));
 
       const request = (async () => {
@@ -56,7 +68,12 @@ export function useLiveResource<T>(
               typeof payload.error === "string"
                 ? payload.error
                 : `Request failed (${response.status})`;
-            throw new Error(message);
+            const notConfigured =
+              typeof payload === "object" &&
+              payload !== null &&
+              "code" in payload &&
+              payload.code === "not_configured";
+            throw new ResourceError(message, notConfigured);
           }
           if (active) {
             setResource({
@@ -64,6 +81,7 @@ export function useLiveResource<T>(
               loading: false,
               refreshing: false,
               error: null,
+              notConfigured: false,
               updatedAt: new Date(),
             });
           }
@@ -74,6 +92,7 @@ export function useLiveResource<T>(
               loading: false,
               refreshing: false,
               error: error instanceof Error ? error.message : "Unable to load data.",
+              notConfigured: error instanceof ResourceError && error.notConfigured,
             }));
           }
         }

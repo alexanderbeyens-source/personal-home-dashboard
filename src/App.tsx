@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon } from "./components/Icon";
 import { Panel, ResourceState } from "./components/Panel";
 import { useLiveResource } from "./hooks/useLiveResource";
-import { MobilityHomePage } from "./MobilityHomePage";
 import type {
   CalendarData,
   DailyBriefing,
@@ -171,6 +170,7 @@ function EconomicCockpit() {
     loading: !hasData && resources.some((item) => item.loading),
     refreshing: hasData && resources.some((item) => item.loading || item.refreshing),
     error: resources.map((item) => item.error).filter(Boolean).join(" · ") || null,
+    notConfigured: false,
     updatedAt: resources.map((item) => item.updatedAt)
       .filter((date): date is Date => date !== null)
       .sort((first, second) => first.getTime() - second.getTime())[0] ?? null,
@@ -579,7 +579,6 @@ function NewsCenter({
         </a>
         <div className="topbar-right">
           <a className="news-home-link" href="/">Dashboard</a>
-          <a className="news-home-link" href="/mobility">Mobility &amp; Home</a>
           <span className="account-name">{user.name || "Signed in"}</span>
           <button className="sign-out-button" onClick={() => onSignOut(csrfToken)}>Sign out</button>
         </div>
@@ -770,6 +769,7 @@ function SportsPanel() {
       premierLeague.error && `Premier League: ${premierLeague.error}`,
       belgianFootball.error && `Belgian football: ${belgianFootball.error}`,
     ].filter(Boolean).join(" · ") || null,
+    notConfigured: false,
     updatedAt: sportsResources.map((resource) => resource.updatedAt)
       .filter((date): date is Date => date !== null)
       .sort((a, b) => a.getTime() - b.getTime())[0] ?? null,
@@ -868,6 +868,9 @@ function Dashboard({
   const agendaEvents = agenda.data?.events ?? [];
   const homeDevices = home.data?.devices ?? [];
   const projectsList = projects.data ?? [];
+  // Optional integrations outside the core product scope stay hidden until they are configured.
+  const showHome = home.data !== null || (home.error !== null && !home.notConfigured);
+  const showProjects = projectsList.length > 0 || projects.error !== null;
 
   return (
     <main className="app-shell">
@@ -880,7 +883,6 @@ function Dashboard({
           <div className="connection-status"><span className="status-pulse" /> PUBLIC FEEDS</div>
           <div className="topbar-divider" />
           <span className="topbar-date">{date}</span>
-          <a className="news-home-link" href="/mobility">Mobility &amp; Home</a>
           <span className="account-name">{user.name || "Signed in"}</span>
           <button className="sign-out-button" onClick={() => onSignOut(csrfToken)}>Sign out</button>
         </div>
@@ -948,7 +950,7 @@ function Dashboard({
           ) : (
             <ResourceState loading={agenda.loading} empty="Connect a calendar to see what's coming up." />
           )}
-          {agenda.error?.includes("Not configured") && <span className="setup-hint">Add a calendar URL in your local .env file</span>}
+          {agenda.notConfigured && <span className="setup-hint">Add your calendar's private ICS feed to the server environment to show your agenda</span>}
           <p className="panel-footnote">Calendar details stay private · ICS connection</p>
         </Panel>
 
@@ -956,42 +958,44 @@ function Dashboard({
 
         <EconomicCockpit />
 
-        <Panel title="Home, connected" eyebrow="SMART HOME" icon="home" className="home-panel" resource={home}>
-          {homeDevices.length ? (
-            <>
-              <div className="home-overview">
-                <span className="home-count"><strong>{homeDevices.length}</strong><small>devices</small></span>
-                {home.data?.temperature && <span className="home-reading"><strong>{home.data.temperature.value}{home.data.temperature.unit}</strong><small>{home.data.temperature.name}</small></span>}
-                {home.data?.vacuum && <span className="home-reading"><strong>{home.data.vacuum.state}</strong><small>{home.data.vacuum.name}</small></span>}
-              </div>
-              <div className="device-list">
-                {homeDevices.slice(0, 4).map((device) => <div key={device.name}><span className={`device-indicator ${device.state === "on" ? "device-on" : ""}`} /><span>{device.name}</span><small>{device.state}</small></div>)}
-              </div>
-            </>
-          ) : (
-            <ResourceState loading={home.loading} empty="Connect Home Assistant to see your devices." />
-          )}
-          {home.error?.includes("Not configured") && <span className="setup-hint">Set your Home Assistant URL and token locally</span>}
-          <p className="panel-footnote">Private connection · Home Assistant</p>
-        </Panel>
+        {showHome && (
+          <Panel title="Home, connected" eyebrow="SMART HOME" icon="home" className="home-panel" resource={home}>
+            {homeDevices.length ? (
+              <>
+                <div className="home-overview">
+                  <span className="home-count"><strong>{homeDevices.length}</strong><small>devices</small></span>
+                  {home.data?.temperature && <span className="home-reading"><strong>{home.data.temperature.value}{home.data.temperature.unit}</strong><small>{home.data.temperature.name}</small></span>}
+                  {home.data?.vacuum && <span className="home-reading"><strong>{home.data.vacuum.state}</strong><small>{home.data.vacuum.name}</small></span>}
+                </div>
+                <div className="device-list">
+                  {homeDevices.slice(0, 4).map((device) => <div key={device.name}><span className={`device-indicator ${device.state === "on" ? "device-on" : ""}`} /><span>{device.name}</span><small>{device.state}</small></div>)}
+                </div>
+              </>
+            ) : (
+              <ResourceState loading={home.loading} empty="Connect Home Assistant to see your devices." />
+            )}
+            <p className="panel-footnote">Private connection · Home Assistant</p>
+          </Panel>
+        )}
 
-        <Panel title="Made by you" eyebrow="PERSONAL PROJECTS" icon="grid" className="projects-panel" resource={projects}>
-          {projectsList.length ? (
-            <div className="project-list">
-              {projectsList.slice(0, 4).map((project) => (
-                <a className="project-link" href={project.url} key={project.url} target="_blank" rel="noreferrer">
-                  <span className="project-icon"><Icon name="grid" size={16} /></span>
-                  <span><strong>{project.name}</strong><small>{project.description ?? "Personal project"}</small></span>
-                  <Icon name="arrow" size={15} className="project-arrow" />
-                </a>
-              ))}
-            </div>
-          ) : (
-            <ResourceState loading={projects.loading} empty="Your project links will live here." />
-          )}
-          {projects.error?.includes("Not configured") && <span className="setup-hint">Add links with PROJECTS_JSON in .env</span>}
-          <p className="panel-footnote">Your links · configured locally</p>
-        </Panel>
+        {showProjects && (
+          <Panel title="Made by you" eyebrow="PERSONAL PROJECTS" icon="grid" className="projects-panel" resource={projects}>
+            {projectsList.length ? (
+              <div className="project-list">
+                {projectsList.slice(0, 4).map((project) => (
+                  <a className="project-link" href={project.url} key={project.url} target="_blank" rel="noreferrer">
+                    <span className="project-icon"><Icon name="grid" size={16} /></span>
+                    <span><strong>{project.name}</strong><small>{project.description ?? "Personal project"}</small></span>
+                    <Icon name="arrow" size={15} className="project-arrow" />
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <ResourceState loading={projects.loading} empty="Your project links will live here." />
+            )}
+            <p className="panel-footnote">Your links · configured locally</p>
+          </Panel>
+        )}
       </section>
 
       <footer className="page-footer">
@@ -1114,7 +1118,6 @@ function App() {
   };
   const path = window.location.pathname.replace(/\/+$/, "");
   if (path === "/news") return <NewsCenter {...pageProps} />;
-  if (path === "/mobility") return <MobilityHomePage {...pageProps} />;
   return <Dashboard {...pageProps} />;
 }
 

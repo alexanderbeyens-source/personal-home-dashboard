@@ -11,7 +11,6 @@ export const NEWS_CATEGORIES = [
 export const NEWS_SOURCES = [
   {
     id: "vrt-nws",
-    enabled: false,
     name: "VRT NWS",
     category: "belgium",
     language: "nl",
@@ -167,6 +166,12 @@ const xmlParser = new XMLParser({
   trimValues: true,
   cdataPropName: "#cdata",
 });
+
+export function isAllowedFeedContentType(contentType, expectJson) {
+  return expectJson
+    ? /^\s*(?:application|text)\/(?:[\w.+-]*\+)?json\b/i.test(contentType)
+    : /^\s*(?:application\/(?:rss\+xml|atom\+xml|feed\+xml|xml)|text\/xml)\b/i.test(contentType);
+}
 
 export function parseFeedXml(xml, source, limit = MAX_SOURCE_ARTICLES) {
   if (typeof xml !== "string" || hasProhibitedXmlDeclarations(xml)) {

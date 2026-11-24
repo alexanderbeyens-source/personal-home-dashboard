@@ -9,7 +9,7 @@ import GitHub from "@auth/core/providers/github";
 import { createDailyBriefingService } from "./briefing.js";
 import { loadNbaData, loadNbaPlayers, mapSportsEvents } from "./data.js";
 import { createEconomicLoaders, createEconomicsService } from "./economics.js";
-import { createNewsService } from "./news.js";
+import { createNewsService, isAllowedFeedContentType } from "./news.js";
 
 const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
 
@@ -314,10 +314,9 @@ async function fetchNewsContent(source, expectJson) {
     if (!response.ok) throw new Error(`News source returned ${response.status}.`);
 
     const contentType = response.headers.get("content-type") ?? "";
-    const validContentType = expectJson
-      ? /(?:application|text)\/(?:[\w.+-]*\+)?json\b/i.test(contentType)
-      : /(?:application\/(?:rss\+xml|atom\+xml|xml)|text\/xml)\b/i.test(contentType);
-    if (!validContentType) throw new Error("News source returned an unsupported content type.");
+    if (!isAllowedFeedContentType(contentType, expectJson)) {
+      throw new Error("News source returned an unsupported content type.");
+    }
 
     const body = await readLimitedBody(response, 512 * 1024);
     if (!expectJson) return body;
@@ -401,8 +400,9 @@ function parseCalendarDate(value, timezone) {
 function requireConfig(keys) {
   const missing = keys.filter((key) => !process.env[key]);
   if (missing.length) {
-    const error = new Error(`Not configured. Set ${missing.join(" and ")} in your local .env file.`);
+    const error = new Error("This integration is not configured on the server.");
     error.status = 503;
+    error.code = "not_configured";
     throw error;
   }
 }
@@ -798,6 +798,9 @@ async function handleRequest(request, response) {
       return sendJson(response, 200, result);
     } catch (error) {
       const status = error.status ?? 502;
+      if (error.code === "not_configured") {
+        return sendJson(response, status, { error: error.message, code: "not_configured" });
+      }
       if (status >= 500) {
         console.error("API request failed:", url.pathname, error.name);
         return sendJson(response, status, { error: "Live data is temporarily unavailable." });

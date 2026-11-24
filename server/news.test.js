@@ -3,6 +3,7 @@ import {
   NEWS_CATEGORIES,
   NEWS_SOURCES,
   canonicalizeUrl,
+  isAllowedFeedContentType,
   createNewsService,
   deduplicateArticles,
   normalizeEspnNews,
@@ -284,7 +285,14 @@ describe("news service caching, isolation, and filters", () => {
     expect(response.feedStatus).toHaveLength(2);
   });
 
-  it("keeps VRT disabled and RTBF absent from active news sources", async () => {
+  it("keeps VRT NWS as the active Belgian source and RTBF absent", () => {
+    const belgianSources = NEWS_SOURCES.filter(({ category, enabled }) => category === "belgium" && enabled !== false);
+    expect(belgianSources.map(({ id }) => id)).toEqual(["vrt-nws"]);
+    expect(belgianSources[0]).toMatchObject({ language: "nl", url: "https://www.vrt.be/vrtnws/nl.rss.headlines.xml" });
+    expect(NEWS_SOURCES.some(({ id }) => id.startsWith("rtbf"))).toBe(false);
+  });
+
+  it("skips disabled sources entirely", async () => {
     const disabledVrt = { ...source, id: "vrt-nws", name: "VRT NWS", enabled: false };
     const fetchXml = vi.fn(async (itemSource) => rssFeed([
       rssItem({
@@ -297,8 +305,6 @@ describe("news service caching, isolation, and filters", () => {
     const categoryResponse = await service.query({ category: "belgium", since: "all" });
     const briefingResponse = await service.query({ view: "briefing", since: "all" });
 
-    expect(NEWS_SOURCES.some(({ id }) => id === "rtbf-belgique")).toBe(false);
-    expect(NEWS_SOURCES.find(({ id }) => id === "vrt-nws")).toMatchObject({ enabled: false });
     expect(categoryResponse.articles).toEqual([]);
     expect(briefingResponse.articles).toEqual([]);
     expect(categoryResponse.sources).toEqual([]);
@@ -471,5 +477,20 @@ describe("news service caching, isolation, and filters", () => {
     expect(selected.filter(({ title }) => title === sharedTitle)).toHaveLength(1);
     expect(selected.some(({ id }) => id === "intl-alt")).toBe(true);
     expect(articleRelevanceScore(selected[0], Date.parse("2026-11-23T12:00:00.000Z"))).toBeGreaterThan(0);
+  });
+
+  it("accepts the XML and JSON feed content types sources actually send", () => {
+    for (const type of [
+      "application/rss+xml; charset=UTF-8",
+      "application/atom+xml;charset=utf-8",
+      "application/feed+xml;charset=utf-8",
+      "application/xml",
+      "text/xml; charset=utf-8",
+    ]) expect(isAllowedFeedContentType(type, false)).toBe(true);
+    expect(isAllowedFeedContentType("application/json; charset=utf-8", true)).toBe(true);
+    expect(isAllowedFeedContentType("text/html; charset=utf-8", false)).toBe(false);
+    expect(isAllowedFeedContentType("text/html; x=application/xml", false)).toBe(false);
+    expect(isAllowedFeedContentType("application/json", false)).toBe(false);
+    expect(isAllowedFeedContentType("application/rss+xml", true)).toBe(false);
   });
 });

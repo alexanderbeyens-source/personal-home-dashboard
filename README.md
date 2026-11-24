@@ -49,7 +49,7 @@ Do not make the service public without authentication. All API routes require th
 ## Live data and integrations
 
 - Weather: Open-Meteo, using the coordinates in `.env`.
-- Headlines: the protected `/api/news` route aggregates BBC News, The Guardian, Ars Technica, BBC Technology, MIT Technology Review, BBC Business, De Tijd, Simon Willison, GitHub Changelog, ESPN NBA News, BBC Sport's Premier League feed, and selected Sporza Belgian-football stories. RTBF Belgique is not an active source; VRT NWS remains configured but disabled. The dashboard news list shows up to five balanced headlines. `/news` provides category, source, publication-date, and relevance/recency sorting. Relevance is a deterministic ranking using a 72-hour time decay, source type, feed position, and a small set of explicit high-impact headline terms; it does not display a numeric score. Feeds are fetched server-side, cached in memory, and isolated so one unavailable source does not block the rest. Legacy `world`, `technology`, and `business` category requests remain supported.
+- Headlines: the protected `/api/news` route aggregates VRT NWS, BBC News, The Guardian, Ars Technica, BBC Technology, MIT Technology Review, BBC Business, De Tijd, Simon Willison, GitHub Changelog, ESPN NBA News, BBC Sport's Premier League feed, and selected Sporza Belgian-football stories. VRT NWS (Dutch headlines feed) is the Belgian general-news source; RTBF Belgique is not an active source. The dashboard news list shows up to five balanced headlines. `/news` provides category, source, publication-date, and relevance/recency sorting. Relevance is a deterministic ranking using a 72-hour time decay, source type, feed position, and a small set of explicit high-impact headline terms; it does not display a numeric score. Feeds are fetched server-side, cached in memory, and isolated so one unavailable source does not block the rest. Legacy `world`, `technology`, and `business` category requests remain supported.
 - Reuters: an official public Reuters RSS feed could not be confirmed. A live Google News RSS candidate returned recent Reuters-attributed headlines, dates, and a Reuters publisher label, but its article links resolve only to Google News and its source metadata links to the Reuters homepage. It is not enabled because an original Reuters article URL cannot be reliably retained.
 - Sports: ESPN's public NBA and Premier League scoreboards; NBA news is also from ESPN. Sporza's Dutch Atom feed is filtered by its explicit `Jupiler Pro League` and `Rode Duivels` tags, keeping its general sports coverage out of Belgian football. The Premier League standings link opens the league's live table.
 - Daily briefing: the dashboard combines relevant, deduplicated headlines with ESPN scores, tagged Sporza reports, selected material movements in official economic indicators, ECB-based reference rates, the configured ICS agenda, and Open-Meteo weather. It uses source-provided summaries and links, calls out unavailable or stale feeds, and is generated server-side with a 15-minute in-memory cache plus an explicit refresh. It uses deterministic selection and extractive summaries, not an external AI service.
@@ -63,7 +63,7 @@ The calendar and Home Assistant cards show a connection state until configured. 
 
 ## Mobility & Home · Phase 3 assessment
 
-The authenticated `/mobility` page is an integration-availability assessment, not a live device dashboard. It does not contact either account or display simulated device states. No device adapter or credential variable has been added because neither option meets the current requirements for a safe, supported, no-cost, independently verifiable integration.
+This section records an integration-availability assessment only. Per the functional analysis (section 4 and 13.6), Mobility & Home is not part of the user interface: the former `/mobility` page has been removed and no device data is contacted or simulated. No device adapter or credential variable has been added because neither option meets the current requirements for a safe, supported, no-cost, independently verifiable integration.
 
 | Area | Mercedes-Benz CLA 250+ (2026, Europe) | Dreame L50s Pro Ultra |
 | --- | --- | --- |
@@ -83,7 +83,7 @@ Research references, checked 23 November 2026:
 - [Dreame community account setup](https://dv.tasshack.com/configuration/dreamehome) requires the Dreamehome app username/password, email-based account and matching device region.
 - [Dreame community integration source](https://github.com/Tasshack/dreame-vacuum) is a Home Assistant integration, not a standalone Northstar API.
 
-No mobility-related environment variables are required. No Mercedes or Dreame credentials are stored. The page can be removed by removing the `/mobility` route and its navigation links; there is no background job, persistent state or external connection to disable.
+No mobility-related environment variables are required. No Mercedes or Dreame credentials are stored, and there is no background job, persistent state or external connection.
 
 Keep `.env` private and never commit real calendar URLs, Home Assistant tokens, or other credentials.
 
