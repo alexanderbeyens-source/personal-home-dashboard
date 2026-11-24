@@ -1,13 +1,13 @@
 import { useLiveResource } from "../hooks/useLiveResource";
 import type { TasksData } from "../types";
 import { Panel, ResourceState } from "./Panel";
-import { TaskGroup, dashboardOnceItems, useTaskToggle } from "./tasks";
+import { TaskAddForm, TaskGroup, dashboardOnceItems, useTaskToggle } from "./tasks";
 
 export const TASKS_URL = "/api/tasks";
 
 export function TasksPanel({ csrfToken }: { csrfToken: string }) {
   const resource = useLiveResource<TasksData>(TASKS_URL, 5 * 60 * 1000, `${TASKS_URL}?refresh=1`);
-  const { data, toggle, pending, error } = useTaskToggle(resource, csrfToken);
+  const { data, toggle, pending, error, replace } = useTaskToggle(resource, csrfToken);
   const once = data?.sections.find((section) => section.id === "once");
   const deadlines = data ? dashboardOnceItems(once, data.today) : [];
   return (
@@ -36,6 +36,7 @@ export function TasksPanel({ csrfToken }: { csrfToken: string }) {
       ) : (
         <ResourceState loading={resource.loading} empty="Het takenbestand bevat nog geen taken." />
       )}
+      {data && <TaskAddForm csrfToken={csrfToken} onAdded={replace} compact />}
     </Panel>
   );
 }

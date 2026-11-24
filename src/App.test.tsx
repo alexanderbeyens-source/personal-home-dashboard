@@ -306,7 +306,7 @@ describe("Tasks widget", () => {
     updatedAt: "2026-11-24T10:00:00Z",
   });
 
-  function stub(toggleResponse: () => Response) {
+  function stub(toggleResponse: () => Response, addResponse: () => Response = () => jsonResponse({ error: "niet gebruikt" }, 500)) {
     const posts: unknown[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = new URL(String(input), "http://localhost").pathname;
@@ -316,6 +316,10 @@ describe("Tasks widget", () => {
       if (path === "/api/tasks/toggle") {
         posts.push({ method: init?.method, body: JSON.parse(String(init?.body)) });
         return toggleResponse();
+      }
+      if (path === "/api/tasks/add") {
+        posts.push({ method: init?.method, path, body: JSON.parse(String(init?.body)) });
+        return addResponse();
       }
       return jsonResponse({ error: "Live gegevens zijn tijdelijk niet beschikbaar." }, 503);
     }));
@@ -331,6 +335,34 @@ describe("Tasks widget", () => {
     expect(checkbox.checked).toBe(true);
     await waitFor(() => expect(posts).toEqual([{ method: "POST", body: { id: "aaaaaaaaaaaaaaaa", done: true, csrfToken: "csrf-token-from-auth" } }]));
     await waitFor(() => expect(screen.getByText("1/1 gedaan")).toBeTruthy());
+  });
+
+  it("adds a task with a deadline from the dashboard and shows the updated list", async () => {
+    const base = tasks(false);
+    const added = { id: "cccccccccccccccc", text: "Tandarts bellen", done: false, doneDate: null, due: "2026-11-26", overdue: false };
+    const withNew = { ...base, sections: base.sections.map((section) => (section.id === "once" ? { ...section, items: [...section.items, added] } : section)) };
+    const posts = stub(() => jsonResponse(tasks(true)), () => jsonResponse(withNew));
+    render(<App />);
+    const input = await screen.findByLabelText("Nieuwe taak");
+    fireEvent.change(input, { target: { value: "Tandarts bellen" } });
+    fireEvent.change(screen.getByLabelText("Deadline (optioneel)"), { target: { value: "2026-11-26" } });
+    fireEvent.click(screen.getByRole("button", { name: "Toevoegen" }));
+    await waitFor(() => expect(posts).toEqual([{ method: "POST", path: "/api/tasks/add", body: { section: "once", text: "Tandarts bellen", due: "2026-11-26", csrfToken: "csrf-token-from-auth" } }]));
+    expect(await screen.findByRole("checkbox", { name: "Tandarts bellen" })).toBeTruthy();
+    expect(screen.getByText("Toegevoegd aan Eenmalig.").getAttribute("role")).toBe("status");
+    expect((screen.getByLabelText("Nieuwe taak") as HTMLInputElement).value).toBe("");
+  });
+
+  it("keeps the typed task and explains when adding fails", async () => {
+    stub(() => jsonResponse(tasks(true)), () => jsonResponse({ error: "Een deadline kan alleen bij een eenmalige taak." }, 400));
+    render(<App />);
+    const input = await screen.findByLabelText("Nieuwe taak");
+    fireEvent.change(screen.getByLabelText("Rubriek"), { target: { value: "weekly" } });
+    expect(screen.queryByLabelText("Deadline (optioneel)")).toBeNull();
+    fireEvent.change(input, { target: { value: "Was doen" } });
+    fireEvent.click(screen.getByRole("button", { name: "Toevoegen" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Niet opgeslagen: Een deadline kan alleen");
+    expect((screen.getByLabelText("Nieuwe taak") as HTMLInputElement).value).toBe("Was doen");
   });
 
   it("restores the checkbox and explains when saving fails", async () => {

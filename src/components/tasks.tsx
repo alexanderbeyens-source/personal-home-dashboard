@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState, type FormEvent } from "react";
 import { LOCALE } from "../format";
 import type { LiveResource, TaskItem, TaskSection, TasksData } from "../types";
 
@@ -56,7 +56,76 @@ export function useTaskToggle(resource: LiveResource<TasksData>, csrfToken: stri
     }
   }
 
-  return { data, toggle, pending, error };
+  return { data, toggle, pending, error, replace: setOverride };
+}
+
+const SECTION_OPTIONS: { id: TaskSection["id"]; label: string }[] = [
+  { id: "once", label: "Eenmalig" },
+  { id: "daily", label: "Dagelijks" },
+  { id: "weekly", label: "Wekelijks" },
+  { id: "monthly", label: "Maandelijks" },
+];
+
+// Adds a task to the task file. The server answers with the full updated list, which
+// replaces the current one; on failure the input stays so nothing typed is lost.
+export function TaskAddForm({ csrfToken, onAdded, compact = false }: { csrfToken: string; onAdded: (data: TasksData) => void; compact?: boolean }) {
+  const id = useId();
+  const [text, setText] = useState("");
+  const [section, setSection] = useState<TaskSection["id"]>("once");
+  const [due, setDue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ tone: "error" | "ok"; text: string } | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (busy || !text.trim()) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/tasks/add", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ section, text, due: section === "once" && due ? due : null, csrfToken }),
+      });
+      const payload = (await response.json().catch(() => null)) as (TasksData & { error?: string }) | null;
+      if (response.status === 401) window.dispatchEvent(new Event("northstar:session-expired"));
+      if (!response.ok || !payload?.sections) throw new Error(payload?.error ?? "Opslaan mislukt.");
+      onAdded(payload);
+      const label = SECTION_OPTIONS.find((option) => option.id === section)?.label ?? "";
+      setMessage({ tone: "ok", text: `Toegevoegd aan ${label}.` });
+      setText("");
+      setDue("");
+    } catch (caught) {
+      setMessage({ tone: "error", text: `Niet opgeslagen: ${caught instanceof Error ? caught.message : "onbekende fout"}` });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className={`task-add${compact ? " is-compact" : ""}`} onSubmit={submit} aria-label="Taak toevoegen">
+      <label className="task-add-text" htmlFor={`${id}-text`}>
+        <span>Nieuwe taak</span>
+        <input id={`${id}-text`} type="text" value={text} maxLength={300} required disabled={busy} onChange={(event) => setText(event.target.value)} />
+      </label>
+      <label htmlFor={`${id}-section`}>
+        <span>Rubriek</span>
+        <select id={`${id}-section`} value={section} disabled={busy} onChange={(event) => setSection(event.target.value as TaskSection["id"])}>
+          {SECTION_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+        </select>
+      </label>
+      {section === "once" && (
+        <label htmlFor={`${id}-due`}>
+          <span>Deadline (optioneel)</span>
+          <input id={`${id}-due`} type="date" value={due} disabled={busy} onChange={(event) => setDue(event.target.value)} />
+        </label>
+      )}
+      <button type="submit" className="button-primary" disabled={busy || !text.trim()}>{busy ? "Opslaan…" : "Toevoegen"}</button>
+      {message && (
+        <p className={message.tone === "error" ? "task-error" : "task-added"} role={message.tone === "error" ? "alert" : "status"}>{message.text}</p>
+      )}
+    </form>
+  );
 }
 
 export function TaskRow({ item, today, busy, onToggle }: { item: TaskItem; today: string; busy: boolean; onToggle: (item: TaskItem) => void }) {

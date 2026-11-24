@@ -16,7 +16,7 @@ import { calendarsFromEnv, createCalendarService, isCalendarConfigured } from ".
 import { logFetchFailure, upstreamError } from "./fetch-errors.js";
 import { createSportsService } from "./sports.js";
 import { isAllowedOrigin, verifyCsrfToken } from "./csrf.js";
-import { createTasksService, tasksConfigFromEnv } from "./tasks.js";
+import { createTasksService, newTaskLine, tasksConfigFromEnv } from "./tasks.js";
 import { WEATHER_CURRENT, WEATHER_DAILY, WEATHER_HOURLY, mapForecast } from "./weather.js";
 
 const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
@@ -853,28 +853,35 @@ function sendApiError(response, pathname, error) {
   return sendJson(response, status, { error: error.message || "Invalid request." });
 }
 
-// The only state-changing API route. Requires, in this order: POST, a configured
-// server, rate limit, same Origin as AUTH_URL, JSON content type, a small body, a valid
-// allow-listed session and Auth.js's double-submit CSRF token.
-async function handleTaskToggle(request, response, url) {
+// The only state-changing API routes (task toggle and task add). Each requires, in this
+// order: POST, a configured server, rate limit, same Origin as AUTH_URL, JSON content
+// type, a small body, a valid allow-listed session and Auth.js's double-submit CSRF token.
+// Returns the parsed body, or null after it has already sent the rejection.
+async function readProtectedWrite(request, response) {
   if (request.method !== "POST") {
     response.setHeader("allow", "POST");
-    return sendJson(response, 405, { error: "Method not allowed." });
+    sendJson(response, 405, { error: "Method not allowed." });
+    return null;
   }
   if (!authConfig) {
-    return sendJson(response, 503, { error: "Aanmelden is niet geconfigureerd op deze server." });
+    sendJson(response, 503, { error: "Aanmelden is niet geconfigureerd op deze server." });
+    return null;
   }
   if (isRateLimited(request, "write", 30, 60_000)) {
-    return sendRateLimitResponse(response);
+    sendRateLimitResponse(response);
+    return null;
   }
   if (!isAllowedOrigin(request.headers.origin, process.env.AUTH_URL)) {
-    return sendJson(response, 403, { error: "Verzoek geweigerd." });
+    sendJson(response, 403, { error: "Verzoek geweigerd." });
+    return null;
   }
   if (!String(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
-    return sendJson(response, 415, { error: "Verwacht JSON." });
+    sendJson(response, 415, { error: "Verwacht JSON." });
+    return null;
   }
   if (Number(request.headers["content-length"] ?? 0) > MAX_WRITE_BODY_BYTES) {
-    return sendJson(response, 413, { error: "Verzoek is te groot." });
+    sendJson(response, 413, { error: "Verzoek is te groot." });
+    return null;
   }
 
   let user;
@@ -882,19 +889,31 @@ async function handleTaskToggle(request, response, url) {
     user = await getAuthenticatedUser(request);
   } catch (error) {
     console.error("Session validation failed:", error.name);
-    return sendJson(response, 503, { error: "Authenticatie is tijdelijk niet beschikbaar." });
+    sendJson(response, 503, { error: "Authenticatie is tijdelijk niet beschikbaar." });
+    return null;
   }
-  if (!user) return sendJson(response, 401, { error: "Aanmelden vereist." });
+  if (!user) {
+    sendJson(response, 401, { error: "Aanmelden vereist." });
+    return null;
+  }
 
   let body;
   try {
     body = JSON.parse(await readRequestBody(request, MAX_WRITE_BODY_BYTES));
   } catch (error) {
-    return sendJson(response, error.status ?? 400, { error: error.status === 413 ? "Verzoek is te groot." : "Ongeldige JSON." });
+    sendJson(response, error.status ?? 400, { error: error.status === 413 ? "Verzoek is te groot." : "Ongeldige JSON." });
+    return null;
   }
-  if (!verifyCsrfToken({ cookieHeader: request.headers.cookie, cookieName: csrfCookieName, secret: process.env.AUTH_SECRET, bodyToken: body?.csrfToken })) {
-    return sendJson(response, 403, { error: "Verzoek geweigerd." });
+  if (!body || typeof body !== "object" || !verifyCsrfToken({ cookieHeader: request.headers.cookie, cookieName: csrfCookieName, secret: process.env.AUTH_SECRET, bodyToken: body.csrfToken })) {
+    sendJson(response, 403, { error: "Verzoek geweigerd." });
+    return null;
   }
+  return body;
+}
+
+async function handleTaskToggle(request, response, url) {
+  const body = await readProtectedWrite(request, response);
+  if (!body) return;
   if (typeof body.id !== "string" || !/^[a-f0-9]{16}$/.test(body.id) || typeof body.done !== "boolean") {
     return sendJson(response, 400, { error: "Ongeldige taak." });
   }
@@ -902,6 +921,20 @@ async function handleTaskToggle(request, response, url) {
   try {
     if (!tasksConfigFromEnv(process.env)) requireConfig(["GITHUB_TASKS_TOKEN", "GITHUB_TASKS_REPO"]);
     return sendJson(response, 200, await tasksService.toggle({ id: body.id, done: body.done }));
+  } catch (error) {
+    return sendApiError(response, url.pathname, error);
+  }
+}
+
+async function handleTaskAdd(request, response, url) {
+  const body = await readProtectedWrite(request, response);
+  if (!body) return;
+
+  try {
+    const input = { section: body.section, text: body.text, due: body.due ?? null };
+    newTaskLine(input); // 400 for invalid input before checking the configuration
+    if (!tasksConfigFromEnv(process.env)) requireConfig(["GITHUB_TASKS_TOKEN", "GITHUB_TASKS_REPO"]);
+    return sendJson(response, 200, await tasksService.add(input));
   } catch (error) {
     return sendApiError(response, url.pathname, error);
   }
@@ -930,6 +963,10 @@ async function handleRequest(request, response) {
 
   if (url.pathname === "/api/tasks/toggle") {
     return handleTaskToggle(request, response, url);
+  }
+
+  if (url.pathname === "/api/tasks/add") {
+    return handleTaskAdd(request, response, url);
   }
 
   if (url.pathname.startsWith("/api/")) {
