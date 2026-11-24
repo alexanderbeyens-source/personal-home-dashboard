@@ -31,6 +31,8 @@ services:
         sync: false
       - key: CALENDAR_ICS_URL
         sync: false
+      - key: CALENDAR_ICS_URLS
+        sync: false
       - key: HOME_ASSISTANT_URL
         sync: false
       - key: HOME_ASSISTANT_TOKEN

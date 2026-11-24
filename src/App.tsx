@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Brand, currentPath, type AuthUser, type PageProps } from "./components/AppShell";
 import { Icon } from "./components/Icon";
+import { AgendaPage } from "./pages/AgendaPage";
 import { BriefingPage } from "./pages/BriefingPage";
 import { Dashboard } from "./pages/Dashboard";
 import { EconomyPage } from "./pages/EconomyPage";
@@ -28,6 +29,7 @@ function AuthCard({ title, children }: { title: string; children: React.ReactNod
 function Page(props: PageProps) {
   const path = currentPath();
   if (path === "/briefing") return <BriefingPage {...props} />;
+  if (path === "/agenda") return <AgendaPage {...props} />;
   if (path === "/news" || path === "/nieuws") return <NewsPage {...props} />;
   if (path === "/sport" || path.startsWith("/sport/")) return <SportPage {...props} />;
   if (path === "/economie") return <EconomyPage {...props} />;
