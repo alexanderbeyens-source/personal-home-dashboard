@@ -8,6 +8,40 @@ export interface LiveResource<T> {
   refresh: () => Promise<void>;
 }
 
+export interface WeatherDay {
+  date: string;
+  weatherCode: number | null;
+  temperatureMax: number | null;
+  temperatureMin: number | null;
+  precipitationSum: number | null;
+  precipitationProbabilityMax: number | null;
+  sunrise: string | null;
+  sunset: string | null;
+  uvIndexMax: number | null;
+  windSpeedMax: number | null;
+}
+
+export interface WeatherDaypart {
+  id: "morning" | "afternoon" | "evening";
+  label: string;
+  from: number;
+  to: number;
+  averageTemperature: number | null;
+  weatherCode: number | null;
+  precipitationProbabilityMax: number | null;
+  status: "past" | "current" | "upcoming";
+}
+
+export interface WeatherHour {
+  time: string;
+  temperature: number | null;
+  precipitationProbability: number | null;
+  precipitation: number | null;
+  weatherCode: number | null;
+  windSpeed: number | null;
+  isDay: boolean | null;
+}
+
 export interface WeatherData {
   location: string;
   temperature: number;
@@ -16,6 +50,12 @@ export interface WeatherData {
   windSpeed: number;
   weatherCode: number;
   isDay: boolean;
+  observedAt?: string;
+  today?: WeatherDay | null;
+  dayparts?: WeatherDaypart[];
+  nextDays?: WeatherDay[];
+  days?: WeatherDay[];
+  hours?: WeatherHour[];
 }
 
 export interface NewsArticle {
