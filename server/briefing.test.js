@@ -68,7 +68,7 @@ describe("daily briefing composition", () => {
     expect(new Set(briefing.topStories.map(({ category }) => category)).size).toBe(5);
     expect(briefing.topStories[0]).toMatchObject({
       summary: expect.stringContaining("Source-provided summary"),
-      whySelected: expect.stringContaining("category balance"),
+      whySelected: expect.stringContaining("categoriebalans"),
       link: expect.stringMatching(/^https:\/\/example\.com\//),
     });
     expect(briefing.sections.technology).toHaveLength(1);
@@ -125,7 +125,7 @@ describe("daily briefing composition", () => {
       },
     }, now);
 
-    expect(briefing.sports.nba.matches[0]).toMatchObject({ label: "Result", source: "ESPN" });
+    expect(briefing.sports.nba.matches[0]).toMatchObject({ label: "Uitslag", source: "ESPN" });
     expect(briefing.sports.belgianFootball[0].sportGroup).toBe("red-devils");
     expect(briefing.economy.referenceRates.rates.USD).toBe(1.15);
     expect(briefing.today.agendaStatus).toBe("available");
@@ -140,9 +140,9 @@ describe("daily briefing composition", () => {
         policyRates: {
           sourceUrl: "https://data.ecb.europa.eu/data/datasets/FM",
           rates: [
-            { id: "deposit", label: "Deposit facility", value: 2.5, lastChangeDate: "2026-11-18" },
-            { id: "refinancing", label: "Main refinancing operations", value: 2.65, lastChangeDate: "2026-11-18" },
-            { id: "lending", label: "Marginal lending facility", value: 2.9, lastChangeDate: "2026-11-18" },
+            { id: "deposit", label: "Depositorente", value: 2.5, lastChangeDate: "2026-11-18" },
+            { id: "refinancing", label: "Basisherfinancieringsrente", value: 2.65, lastChangeDate: "2026-11-18" },
+            { id: "lending", label: "Marginale beleningsrente", value: 2.9, lastChangeDate: "2026-11-18" },
           ],
         },
         belgiumInflation: {
@@ -162,7 +162,7 @@ describe("daily briefing composition", () => {
     expect(briefing.economy.indicatorDevelopments).toHaveLength(2);
     expect(briefing.economy.indicatorDevelopments[0].title).toContain("ECB");
     expect(briefing.economy.indicatorDevelopments[1]).toMatchObject({
-      title: "Belgian HICP changed notably",
+      title: "Belgische HICP opvallend gewijzigd",
       source: "Eurostat · HICP",
     });
   });
@@ -171,7 +171,7 @@ describe("daily briefing composition", () => {
     const briefing = composeDailyBriefing({
       newsByCategory: {},
       agendaConfigured: false,
-      warnings: [{ source: "Weather · Open-Meteo", message: "Unavailable", stale: false }],
+      warnings: [{ source: "Weer · Open-Meteo", message: "Unavailable", stale: false }],
     }, now);
 
     expect(briefing.today).toMatchObject({
@@ -180,7 +180,7 @@ describe("daily briefing composition", () => {
       weather: null,
     });
     expect(briefing.warnings).toEqual([
-      { source: "Weather · Open-Meteo", message: "Unavailable", stale: false },
+      { source: "Weer · Open-Meteo", message: "Unavailable", stale: false },
     ]);
   });
 });
@@ -223,7 +223,7 @@ describe("daily briefing cache", () => {
     expect(stale.generatedAt).toBe(first.generatedAt);
     expect(stale.stale).toBe(true);
     expect(stale.warnings.at(-1)).toMatchObject({
-      source: "Daily briefing",
+      source: "Dagelijkse briefing",
       stale: true,
     });
   });
@@ -243,7 +243,7 @@ describe("daily briefing cache", () => {
       .mockResolvedValueOnce({
         newsByCategory: {},
         agendaConfigured: false,
-        warnings: [{ source: "Weather · Open-Meteo", message: "Unavailable", stale: false }],
+        warnings: [{ source: "Weer · Open-Meteo", message: "Unavailable", stale: false }],
       });
     const service = createDailyBriefingService({ loadInputs, now: () => now });
     await service.get();
@@ -251,7 +251,7 @@ describe("daily briefing cache", () => {
 
     expect(refreshed.today.weather).toEqual(weather);
     expect(refreshed.warnings).toContainEqual({
-      source: "Weather · Open-Meteo",
+      source: "Weer · Open-Meteo",
       message: "Unavailable",
       stale: true,
     });

@@ -75,7 +75,7 @@ describe("protected API routes", () => {
     ]) {
       const response = await fetch(`${baseUrl}${route}`);
       expect(response.status).toBe(401);
-      expect(await response.json()).toEqual({ error: "Sign-in required." });
+      expect(await response.json()).toEqual({ error: "Aanmelden vereist." });
     }
 
     const page = await fetch(baseUrl);
@@ -106,7 +106,7 @@ describe("protected API routes", () => {
       expect(response.status).toBe(503);
       const body = await response.json();
       expect(body).toEqual({
-        error: "This integration is not configured on the server.",
+        error: "Deze koppeling is niet geconfigureerd op de server.",
         code: "not_configured",
       });
       expect(JSON.stringify(body)).not.toMatch(/CALENDAR_ICS_URL|HOME_ASSISTANT/);

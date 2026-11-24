@@ -174,7 +174,7 @@ function sendRateLimitResponse(response) {
     "cache-control": "no-store",
     "retry-after": "60",
   });
-  response.end(JSON.stringify({ error: "Too many requests. Try again shortly." }));
+  response.end(JSON.stringify({ error: "Te veel verzoeken. Probeer het zo meteen opnieuw." }));
 }
 
 function toAuthRequest(request, requestUrl) {
@@ -199,7 +199,7 @@ function toAuthRequest(request, requestUrl) {
 
 async function handleAuthRequest(request, response, requestUrl) {
   if (!authConfig) {
-    return sendJson(response, 503, { error: "Sign-in is not configured on this server." });
+    return sendJson(response, 503, { error: "Aanmelden is niet geconfigureerd op deze server." });
   }
   if (isRateLimited(request, "auth", 20, 60_000)) {
     return sendRateLimitResponse(response);
@@ -213,7 +213,7 @@ async function handleAuthRequest(request, response, requestUrl) {
     response.end(Buffer.from(await authResponse.arrayBuffer()));
   } catch (error) {
     console.error("Authentication handler failed:", error.name);
-    sendJson(response, 500, { error: "Authentication is temporarily unavailable." });
+    sendJson(response, 500, { error: "Authenticatie is tijdelijk niet beschikbaar." });
   }
 }
 
@@ -400,7 +400,7 @@ function parseCalendarDate(value, timezone) {
 function requireConfig(keys) {
   const missing = keys.filter((key) => !process.env[key]);
   if (missing.length) {
-    const error = new Error("This integration is not configured on the server.");
+    const error = new Error("Deze koppeling is niet geconfigureerd op de server.");
     error.status = 503;
     error.code = "not_configured";
     throw error;
@@ -524,7 +524,7 @@ async function routeApiUncached(url) {
     const latitude = Number(process.env.WEATHER_LAT || 50.9894);
     const longitude = Number(process.env.WEATHER_LON || 5.0506);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
-      const error = new Error("Weather location is not configured correctly.");
+      const error = new Error("De weerlocatie is niet correct geconfigureerd.");
       error.status = 500;
       throw error;
     }
@@ -660,21 +660,21 @@ async function routeApiUncached(url) {
 
 async function loadDailyBriefingInputs({ refresh = false } = {}) {
   const jobs = [
-    { key: "economics", source: "Economic indicators", path: "/api/economy" },
-    { key: "weather", source: "Weather · Open-Meteo", path: "/api/weather" },
-    { key: "finance", source: "Reference rates · Frankfurter", path: "/api/finance" },
+    { key: "economics", source: "Economische indicatoren", path: "/api/economy" },
+    { key: "weather", source: "Weer · Open-Meteo", path: "/api/weather" },
+    { key: "finance", source: "Referentiekoersen · Frankfurter", path: "/api/finance" },
     { key: "nba", source: "NBA · ESPN", path: "/api/sports/nba" },
-    { key: "nbaPlayers", source: "NBA player rosters · ESPN", path: "/api/sports/nba/players" },
-    { key: "premierLeague", source: "Premier League · ESPN and BBC Sport", path: "/api/sports/premier-league" },
-    { key: "belgianFootball", source: "Belgian football · Sporza", path: "/api/sports/belgian-football" },
+    { key: "nbaPlayers", source: "NBA-selecties · ESPN", path: "/api/sports/nba/players" },
+    { key: "premierLeague", source: "Premier League · ESPN en BBC Sport", path: "/api/sports/premier-league" },
+    { key: "belgianFootball", source: "Belgisch voetbal · Sporza", path: "/api/sports/belgian-football" },
     ...["belgium", "international", "technology-ai", "economy-business", "sport"].map((category) => ({
       key: category,
-      source: `News · ${category}`,
+      source: `Nieuws · ${category}`,
       path: `/api/news?category=${category}&since=7d&sort=relevant&limit=20`,
     })),
   ];
   if (process.env.CALENDAR_ICS_URL) {
-    jobs.push({ key: "agenda", source: "Calendar · ICS", path: "/api/calendar" });
+    jobs.push({ key: "agenda", source: "Agenda · ICS", path: "/api/calendar" });
   }
 
   const results = await Promise.allSettled(jobs.map(({ path }) => {
@@ -777,7 +777,7 @@ async function handleRequest(request, response) {
       return sendJson(response, 405, { error: "Method not allowed." });
     }
     if (!authConfig) {
-      return sendJson(response, 503, { error: "Sign-in is not configured on this server." });
+      return sendJson(response, 503, { error: "Aanmelden is niet geconfigureerd op deze server." });
     }
     if (isRateLimited(request, "api", 120, 60_000)) {
       return sendRateLimitResponse(response);
@@ -788,9 +788,9 @@ async function handleRequest(request, response) {
       user = await getAuthenticatedUser(request);
     } catch (error) {
       console.error("Session validation failed:", error.name);
-      return sendJson(response, 503, { error: "Authentication is temporarily unavailable." });
+      return sendJson(response, 503, { error: "Authenticatie is tijdelijk niet beschikbaar." });
     }
-    if (!user) return sendJson(response, 401, { error: "Sign-in required." });
+    if (!user) return sendJson(response, 401, { error: "Aanmelden vereist." });
 
     try {
       const result = await routeApi(url);
@@ -803,7 +803,7 @@ async function handleRequest(request, response) {
       }
       if (status >= 500) {
         console.error("API request failed:", url.pathname, error.name);
-        return sendJson(response, status, { error: "Live data is temporarily unavailable." });
+        return sendJson(response, status, { error: "Live gegevens zijn tijdelijk niet beschikbaar." });
       }
       return sendJson(response, status, { error: error.message || "Invalid request." });
     }

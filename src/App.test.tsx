@@ -4,7 +4,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
-const notConfigured = { error: "This integration is not configured on the server.", code: "not_configured" };
+const notConfigured = { error: "Deze koppeling is niet geconfigureerd op de server.", code: "not_configured" };
 
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } });
@@ -18,7 +18,7 @@ function mockApi(overrides: Record<string, () => Response> = {}) {
     if (path === "/api/auth/csrf") return jsonResponse({ csrfToken: "csrf" });
     if (path === "/api/calendar" || path === "/api/home-assistant") return jsonResponse(notConfigured, 503);
     if (path === "/api/projects") return jsonResponse([]);
-    return jsonResponse({ error: "Live data is temporarily unavailable." }, 503);
+    return jsonResponse({ error: "Live gegevens zijn tijdelijk niet beschikbaar." }, 503);
   }));
 }
 
@@ -34,12 +34,12 @@ describe("Dashboard optional integrations", () => {
     mockApi();
     render(<App />);
 
-    const agenda = await screen.findByRole("heading", { name: "Up next" });
+    const agenda = await screen.findByRole("heading", { name: "Straks" });
     const agendaPanel = agenda.closest("section");
-    await waitFor(() => expect(agendaPanel?.querySelector('[role="status"]')?.textContent).toBe("Not configured on the server"));
+    await waitFor(() => expect(agendaPanel?.querySelector('[role="status"]')?.textContent).toBe("Niet geconfigureerd op de server"));
     expect(agendaPanel?.querySelector(".has-error")).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Home, connected" })).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Made by you" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Thuis, verbonden" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Door jou gemaakt" })).toBeNull();
     expect(screen.queryByText("Mobility & Home")).toBeNull();
   });
 
@@ -50,8 +50,8 @@ describe("Dashboard optional integrations", () => {
     });
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Home, connected" })).toBeTruthy();
-    expect(await screen.findByRole("heading", { name: "Made by you" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Thuis, verbonden" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Door jou gemaakt" })).toBeTruthy();
     expect(screen.getByText("Portfolio")).toBeTruthy();
   });
 });
