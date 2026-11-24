@@ -167,6 +167,12 @@ const xmlParser = new XMLParser({
   cdataPropName: "#cdata",
 });
 
+export function isAllowedFeedContentType(contentType, expectJson) {
+  return expectJson
+    ? /^\s*(?:application|text)\/(?:[\w.+-]*\+)?json\b/i.test(contentType)
+    : /^\s*(?:application\/(?:rss\+xml|atom\+xml|feed\+xml|xml)|text\/xml)\b/i.test(contentType);
+}
+
 export function parseFeedXml(xml, source, limit = MAX_SOURCE_ARTICLES) {
   if (typeof xml !== "string" || hasProhibitedXmlDeclarations(xml)) {
     throw new Error("Feed contains unsupported XML declarations.");

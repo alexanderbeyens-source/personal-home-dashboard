@@ -9,7 +9,7 @@ import GitHub from "@auth/core/providers/github";
 import { createDailyBriefingService } from "./briefing.js";
 import { loadNbaData, loadNbaPlayers, mapSportsEvents } from "./data.js";
 import { createEconomicLoaders, createEconomicsService } from "./economics.js";
-import { createNewsService } from "./news.js";
+import { createNewsService, isAllowedFeedContentType } from "./news.js";
 
 const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
 
@@ -314,10 +314,9 @@ async function fetchNewsContent(source, expectJson) {
     if (!response.ok) throw new Error(`News source returned ${response.status}.`);
 
     const contentType = response.headers.get("content-type") ?? "";
-    const validContentType = expectJson
-      ? /(?:application|text)\/(?:[\w.+-]*\+)?json\b/i.test(contentType)
-      : /(?:application\/(?:rss\+xml|atom\+xml|xml)|text\/xml)\b/i.test(contentType);
-    if (!validContentType) throw new Error("News source returned an unsupported content type.");
+    if (!isAllowedFeedContentType(contentType, expectJson)) {
+      throw new Error("News source returned an unsupported content type.");
+    }
 
     const body = await readLimitedBody(response, 512 * 1024);
     if (!expectJson) return body;
