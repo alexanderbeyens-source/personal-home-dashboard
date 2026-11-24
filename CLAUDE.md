@@ -42,7 +42,7 @@ A single `node:http` handler does everything, in this order:
 1. Security headers (CSP etc.) on every response.
 2. `/healthz` — unauthenticated.
 3. `/api/auth/*` — delegated to `@auth/core` (GitHub provider, JWT sessions, 8h). Sign-in is rejected unless the GitHub profile id equals `ALLOWED_GITHUB_ID`; the JWT is stripped down to just `githubUserId`.
-4. Other `/api/*` — GET only, per-IP rate limit, session required, then `routeApi(url)`. Returning `null` from a route means 404. Thrown errors with `status < 500` expose their message; ≥500 are logged by name only and return a generic message.
+4. Other `/api/*` — GET only, per-IP rate limit, session required, then `routeApi(url)`. Returning `null` from a route means 404. Thrown errors with `status < 500` expose their message; ≥500 return a generic message and are logged via `logFetchFailure` (`server/fetch-errors.js`).
 5. Everything else — static files from `dist/` with SPA fallback to `index.html` (path-traversal guarded).
 
 `routeApi` wraps `routeApiUncached` with a per-path TTL cache + in-flight dedup (`sharedApiRouteTtl`); `?refresh=1` bypasses it. `/api/news` and `/api/briefing` skip this layer because their services cache internally. New API routes go as `if (url.pathname === ...)` branches in `routeApiUncached`; add a TTL entry if they should be shared-cached.
@@ -54,7 +54,7 @@ Domain logic lives in separate, unit-tested modules built as factories with inje
 - `briefing.js` — `composeDailyBriefing` combines news, sports, economics, calendar, weather into an extractive, deterministic briefing (15-min cache). No LLM/AI API.
 - `data.js` — ESPN sports mapping.
 
-Outbound fetches go through `fetchJson`/`fetchText`/`readLimitedBody` in `index.js` (timeouts and response size limits) — reuse them for new sources.
+Outbound fetches go through `fetchJson`/`fetchText`/`readLimitedBody` in `index.js` (timeouts and response size limits) — reuse them for new sources. Failures are logged only as a fixed classification (`kind=http status=503`, `kind=timeout`, `kind=network code=ENOTFOUND`, …) with a fixed label: never log `error.message`, `error.input` or URLs, because calendar links and tokens are secrets. Tag errors you throw with `upstreamError(message, { status | kind })`.
 
 `server/security.test.js` spawns the real server on a random port with dummy auth env and asserts API routes are protected; keep it passing when touching request handling.
 

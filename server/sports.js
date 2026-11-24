@@ -171,7 +171,8 @@ export function parseLatestGameLine(payload, player) {
   };
 }
 
-export function createSportsService({ fetchJson, loadExtraNews = async () => ({ articles: [], warnings: [] }), now = () => Date.now() }) {
+// onError(key, error) receives every loader failure (key is e.g. "standings:nba") for logging.
+export function createSportsService({ fetchJson, loadExtraNews = async () => ({ articles: [], warnings: [] }), now = () => Date.now(), onError = () => {} }) {
   const cache = new Map();
   const inFlight = new Map();
 
@@ -188,7 +189,8 @@ export function createSportsService({ fetchJson, loadExtraNews = async () => ({ 
         const fetchedAt = now();
         cache.set(key, { value, fetchedAt });
         return { value, stale: false, fetchedAt, warning: null };
-      } catch {
+      } catch (error) {
+        onError(key, error);
         if (entry) return { value: entry.value, stale: true, fetchedAt: entry.fetchedAt, warning: "Vernieuwen mislukt; de laatste geslaagde gegevens worden getoond." };
         return { value: null, stale: false, fetchedAt: null, warning: "Bron tijdelijk niet beschikbaar." };
       } finally {
@@ -220,7 +222,8 @@ export function createSportsService({ fetchJson, loadExtraNews = async () => ({ 
       const results = await Promise.allSettled(dates.map((date) =>
         fetchJson(`${ESPN_SITE}/${league.sport}/${league.espn}/scoreboard?dates=${date}`)));
       const succeeded = results.filter((result) => result.status === "fulfilled");
-      if (!succeeded.length) throw new Error("Fixtures unavailable.");
+      // Rethrow the first underlying failure so its cause (status, timeout, network) is logged.
+      if (!succeeded.length) throw results[0].reason;
       return {
         ...splitFixtures(succeeded.flatMap((result) => mapSportsEvents(result.value))),
         partial: succeeded.length < results.length,
@@ -246,7 +249,7 @@ export function createSportsService({ fetchJson, loadExtraNews = async () => ({ 
       ...(extra.status === "fulfilled" ? extra.value.articles ?? [] : []),
       ...(espn.status === "fulfilled" ? espn.value : []),
     ];
-    if (!articles.length && espn.status === "rejected" && extra.status === "rejected") throw new Error("News unavailable.");
+    if (!articles.length && espn.status === "rejected" && extra.status === "rejected") throw espn.reason;
     const seen = new Set();
     return articles
       .filter((article) => article.link && !seen.has(article.link) && seen.add(article.link))
@@ -274,7 +277,7 @@ export function createSportsService({ fetchJson, loadExtraNews = async () => ({ 
       }
     }));
     const found = players.filter(Boolean);
-    if (!found.length) throw new Error("Player data unavailable.");
+    if (!found.length) throw rosters.find((roster) => roster.status === "rejected")?.reason ?? new Error("Player data unavailable.");
     return found;
   }, options);
 

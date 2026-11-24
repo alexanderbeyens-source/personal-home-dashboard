@@ -13,6 +13,7 @@ import { createNewsService, isAllowedFeedContentType } from "./news.js";
 import { INTERVALS_API, createHealthService, healthConfigFromEnv } from "./health.js";
 import { createImieHistoryService } from "./imie-history.js";
 import { calendarsFromEnv, createCalendarService, isCalendarConfigured } from "./calendar.js";
+import { logFetchFailure, upstreamError } from "./fetch-errors.js";
 import { createSportsService } from "./sports.js";
 import { isAllowedOrigin, verifyCsrfToken } from "./csrf.js";
 import { createTasksService, tasksConfigFromEnv } from "./tasks.js";
@@ -251,7 +252,7 @@ async function fetchJson(url, options = {}) {
       ...options.headers,
     },
   });
-  if (!response.ok) throw new Error(`Data source returned ${response.status}`);
+  if (!response.ok) throw upstreamError("Data source returned an error status.", { status: response.status });
   return response.json();
 }
 
@@ -265,7 +266,7 @@ async function fetchText(url, options = {}) {
       ...options.headers,
     },
   });
-  if (!response.ok) throw new Error(`Data source returned ${response.status}`);
+  if (!response.ok) throw upstreamError("Data source returned an error status.", { status: response.status });
   return response.text();
 }
 
@@ -274,16 +275,16 @@ async function fetchBuffer(url, maxBytes = 2 * 1024 * 1024) {
     signal: AbortSignal.timeout(20000),
     headers: { accept: "*/*", "user-agent": "NorthstarHomeDashboard/0.1" },
   });
-  if (!response.ok) throw new Error(`Data source returned ${response.status}`);
+  if (!response.ok) throw upstreamError("Data source returned an error status.", { status: response.status });
   return readLimitedBody(response, maxBytes, true);
 }
 
 async function readLimitedBody(response, maxBytes, asBuffer = false) {
   const contentLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
-    throw new Error("Data source response exceeded the size limit.");
+    throw upstreamError("Data source response exceeded the size limit.", { kind: "size" });
   }
-  if (!response.body) throw new Error("Data source returned an empty response.");
+  if (!response.body) throw upstreamError("Data source returned an empty response.", { kind: "invalid-response" });
 
   const reader = response.body.getReader();
   const chunks = [];
@@ -294,7 +295,7 @@ async function readLimitedBody(response, maxBytes, asBuffer = false) {
     totalBytes += value.byteLength;
     if (totalBytes > maxBytes) {
       await reader.cancel();
-      throw new Error("Data source response exceeded the size limit.");
+      throw upstreamError("Data source response exceeded the size limit.", { kind: "size" });
     }
     chunks.push(Buffer.from(value));
   }
@@ -315,27 +316,28 @@ async function fetchCalendarText(url) {
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const location = response.headers.get("location");
       await response.body?.cancel();
-      if (!location || redirectCount === 3) throw new Error("Agenda gaf een ongeldige doorverwijzing.");
+      if (!location || redirectCount === 3) throw upstreamError("Agenda gaf een ongeldige doorverwijzing.", { kind: "invalid-response" });
       const next = new URL(location, currentUrl);
-      if (next.protocol !== "https:" || next.username || next.password) throw new Error("Agenda verwees naar een onveilige link.");
+      if (next.protocol !== "https:" || next.username || next.password) throw upstreamError("Agenda verwees naar een onveilige link.", { kind: "invalid-response" });
       currentUrl = next;
       continue;
     }
-    if (!response.ok) throw new Error(`Agenda gaf status ${response.status}.`);
+    if (!response.ok) throw upstreamError("Agenda gaf een foutstatus.", { status: response.status });
     return readLimitedBody(response, 5 * 1024 * 1024);
   }
-  throw new Error("Agenda overschreed het aantal doorverwijzingen.");
+  throw upstreamError("Agenda overschreed het aantal doorverwijzingen.", { kind: "invalid-response" });
 }
 
 const calendarService = createCalendarService({
   fetchText: fetchCalendarText,
+  onCalendarError: (calendarId, error) => logFetchFailure("Calendar", calendarId, error),
   getCalendars: () => calendarsFromEnv(process.env),
 });
 
 async function fetchNewsContent(source, expectJson) {
   const initialUrl = new URL(source.url);
   if (initialUrl.protocol !== "https:" || initialUrl.username || initialUrl.password) {
-    throw new Error("News source URL is not approved.");
+    throw upstreamError("News source URL is not approved.", { kind: "config" });
   }
   let currentUrl = initialUrl;
   for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
@@ -351,20 +353,20 @@ async function fetchNewsContent(source, expectJson) {
     });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const location = response.headers.get("location");
-      if (!location || redirectCount === 3) throw new Error("News source returned an invalid redirect.");
+      if (!location || redirectCount === 3) throw upstreamError("News source returned an invalid redirect.", { kind: "invalid-response" });
       const redirectUrl = new URL(location, currentUrl);
       await response.body?.cancel();
       if (redirectUrl.origin !== initialUrl.origin || redirectUrl.username || redirectUrl.password) {
-        throw new Error("News source redirected outside its approved host.");
+        throw upstreamError("News source redirected outside its approved host.", { kind: "invalid-response" });
       }
       currentUrl = redirectUrl;
       continue;
     }
-    if (!response.ok) throw new Error(`News source returned ${response.status}.`);
+    if (!response.ok) throw upstreamError("News source returned an error status.", { status: response.status });
 
     const contentType = response.headers.get("content-type") ?? "";
     if (!isAllowedFeedContentType(contentType, expectJson)) {
-      throw new Error("News source returned an unsupported content type.");
+      throw upstreamError("News source returned an unsupported content type.", { kind: "invalid-response" });
     }
 
     const body = await readLimitedBody(response, 512 * 1024);
@@ -372,16 +374,16 @@ async function fetchNewsContent(source, expectJson) {
     try {
       return JSON.parse(body);
     } catch {
-      throw new Error("News source returned invalid JSON.");
+      throw upstreamError("News source returned invalid JSON.", { kind: "invalid-response" });
     }
   }
-  throw new Error("News source exceeded the redirect limit.");
+  throw upstreamError("News source exceeded the redirect limit.", { kind: "invalid-response" });
 }
 
 const newsService = createNewsService({
   fetchXml: (source) => fetchNewsContent(source, false),
   fetchJson: (source) => fetchNewsContent(source, true),
-  onSourceError: (source, error) => console.error("News source failed:", source.id, error.name),
+  onSourceError: (source, error) => logFetchFailure("News source", source.id, error),
 });
 
 // GitHub Contents API for the configured task file. The token is only sent to api.github.com
@@ -497,6 +499,7 @@ const imieHistoryService = createImieHistoryService({
 });
 const sportsService = createSportsService({
   fetchJson,
+  onError: (key, error) => logFetchFailure("Sport source", key, error),
   loadExtraNews: (sourceId) => newsService.loadSource(sourceId),
 });
 const economicsService = createEconomicsService({
@@ -838,7 +841,7 @@ function sendApiError(response, pathname, error) {
     return sendJson(response, status, { error: error.message, code: "not_configured" });
   }
   if (status >= 500) {
-    console.error("API request failed:", pathname, error.name);
+    logFetchFailure("API request", pathname, error);
     return sendJson(response, status, { error: "Live gegevens zijn tijdelijk niet beschikbaar." });
   }
   return sendJson(response, status, { error: error.message || "Invalid request." });

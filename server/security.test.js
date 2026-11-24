@@ -34,7 +34,12 @@ async function startServer(extraEnv = {}) {
       ALLOWED_GITHUB_ID: allowedGithubId,
       ...extraEnv,
     },
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  child.logs = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => {
+    child.logs += chunk;
   });
 
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -157,5 +162,33 @@ describe("protected API routes", () => {
     const accepted = await post(valid);
     expect(accepted.status).toBe(503);
     expect(await accepted.json()).toEqual({ error: "Deze koppeling is niet geconfigureerd op de server.", code: "not_configured" });
+  });
+
+  it("logs why a calendar failed without logging its secret link", async () => {
+    const closedPort = await reservePort();
+    const secretPath = "published/2/SECRET-CALENDAR-TOKEN-7f3a9c";
+    const server = await startServer({
+      CALENDAR_ICS_URL: "",
+      CALENDAR_ICS_URLS: JSON.stringify([{ name: "Gezin", url: `webcal://127.0.0.1:${closedPort}/${secretPath}` }]),
+    });
+    child = server.child;
+    const sessionToken = await encode({
+      token: { githubUserId: allowedGithubId },
+      secret: authSecret,
+      salt: sessionCookieName,
+    });
+    const response = await fetch(`${server.baseUrl}/api/calendar`, { headers: { cookie: `${sessionCookieName}=${sessionToken}` } });
+    expect(response.status).toBe(502);
+    const body = await response.text();
+    for (let attempt = 0; attempt < 20 && !child.logs.includes("API request failed"); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(child.logs).toContain("Calendar failed: cal-1 kind=network code=ECONNREFUSED");
+    expect(child.logs).toContain("API request failed: /api/calendar");
+    for (const text of [child.logs, body]) {
+      expect(text).not.toContain("SECRET-CALENDAR-TOKEN");
+      expect(text).not.toContain(String(closedPort));
+      expect(text).not.toContain("CALENDAR_ICS");
+    }
   });
 });
