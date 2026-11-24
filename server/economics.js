@@ -1,6 +1,8 @@
 const ECB_API = "https://data-api.ecb.europa.eu/service/data";
 const EUROSTAT_API = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data";
 const WORLD_BANK_API = "https://api.worldbank.org/v2/country/WLD/indicator/NY.GDP.MKTP.KD.ZG";
+const XETRA_QUOTE_URL = "https://api.boerse-frankfurt.de/v1/data/price_information/single?isin=IE00B3YLTY66&mic=XETR";
+const XETRA_QUOTE_PAGE = "https://www.boerse-frankfurt.de/etf/ie00b3ylty66";
 const SSGA_IMIE_URL = "https://www.ssga.com/uk/en_gb/intermediary/etfs/funds/spdr-msci-acwi-imi-ucits-etf-spyi-gy";
 
 const DATA_SOURCES = [
@@ -14,6 +16,7 @@ const DATA_SOURCES = [
   { key: "electricityPrices", label: "Elektriciteitsprijzen Belgische gezinnen", ttlMs: 7 * 24 * 60 * 60 * 1000 },
   { key: "gasPrices", label: "Aardgasprijzen Belgische gezinnen", ttlMs: 7 * 24 * 60 * 60 * 1000 },
   { key: "imiePrice", label: "IMIE ETF-koers", ttlMs: 6 * 60 * 60 * 1000 },
+  { key: "imieQuote", label: "IMIE · Xetra-koers", ttlMs: (currentTime) => (isXetraTradingTime(currentTime) ? 60 * 1000 : 30 * 60 * 1000) },
 ];
 
 const POLICY_SERIES = [
@@ -58,7 +61,7 @@ export function createEconomicsService({ loaders, now = () => Date.now() }) {
         cache.set(source.key, {
           value,
           fetchedAt,
-          expiresAt: now() + source.ttlMs,
+          expiresAt: now() + (typeof source.ttlMs === "function" ? source.ttlMs(now()) : source.ttlMs),
           retryAt: 0,
           failedAt: 0,
           warning: null,
@@ -133,6 +136,7 @@ export function createEconomicLoaders({ fetchJson, fetchText, now = () => Date.n
     belgiumInflation: () => loadInflation(fetchJson, "BE", now()),
     euroAreaInflation: () => loadInflation(fetchJson, "EA20", now()),
     worldGrowth: () => loadWorldGrowth(fetchJson, now()),
+    imieQuote: () => loadImieQuote(fetchJson, now()),
     mortgageRates: () => loadMortgageRates(fetchText, now()),
     electricityPrices: () => loadEnergyPrice(fetchJson, {
       dataset: "nrg_pc_204",
@@ -288,6 +292,48 @@ async function loadEnergyPrice(fetchJson, {
       ? "verbruiksklasse 2.500-4.999 kWh/jaar"
       : "verbruiksklasse 20-199 GJ/jaar",
   });
+}
+
+export function isXetraTradingTime(currentTime) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Berlin",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(currentTime)).map(({ type, value }) => [type, value]));
+  if (["Sat", "Sun"].includes(parts.weekday)) return false;
+  const minutes = Number(parts.hour) * 60 + Number(parts.minute);
+  return minutes >= 9 * 60 && minutes <= 17 * 60 + 35;
+}
+
+async function loadImieQuote(fetchJson, currentTime) {
+  const payload = await fetchJson(XETRA_QUOTE_URL);
+  const value = Number(payload?.lastPrice);
+  const timestamp = new Date(payload?.timestampLastPrice ?? "");
+  if (!Number.isFinite(value) || value <= 0 || Number.isNaN(timestamp.getTime())) {
+    throw new Error("Xetra-koers ongeldig of onvolledig.");
+  }
+  if (payload.isin && payload.isin !== "IE00B3YLTY66") throw new Error("Xetra-koers hoort bij een ander fonds.");
+  const finiteOrNull = (input) => (input === null || input === undefined || !Number.isFinite(Number(input)) ? null : Number(input));
+  return {
+    value,
+    unit: payload.currency?.originalValue ?? "EUR",
+    priceType: "Laatste Xetra-koers, tot 15 minuten vertraagd",
+    period: timestamp.toISOString(),
+    frequency: "Intraday · vertraagd",
+    venue: "Xetra",
+    ticker: "SPYI",
+    isin: "IE00B3YLTY66",
+    previousClose: finiteOrNull(payload.closingPricePrevTradingDay),
+    changePercent: finiteOrNull(payload.changeToPrevDayInPercent),
+    dayLow: finiteOrNull(payload.dayLow),
+    dayHigh: finiteOrNull(payload.dayHigh),
+    tradingOpen: isXetraTradingTime(currentTime),
+    source: "Deutsche Börse · Xetra",
+    sourceUrl: XETRA_QUOTE_PAGE,
+    observationStale: currentTime - timestamp.getTime() > 4 * 24 * 60 * 60 * 1000,
+  };
 }
 
 async function loadImieMarketPrice(fetchText, currentTime) {
