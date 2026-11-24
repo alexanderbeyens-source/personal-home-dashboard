@@ -25,7 +25,7 @@ In the Codespaces **Ports** tab, forward port **5173** and keep its visibility *
 
 ## Deploy to Render
 
-The root `render.yaml` defines one Free Node Web Service connected to this repository's `main` branch. In Render, create a **Blueprint** from the GitHub repository and review the service before creating it. Render supplies `PORT`; the server binds to `0.0.0.0`. The health check uses `/healthz`.
+The root `render.yaml` defines one Free Node Web Service connected to this repository's `main` branch. In Render, create a **Blueprint** from the GitHub repository and review the service before creating it. Render supplies `PORT`; the server binds to `0.0.0.0`. The health check uses `/healthz`. The Node.js version is pinned to the 24.x line via `engines` in `package.json`, which Render reads at build time; use Node 24 locally as well.
 
 The Blueprint uses:
 
