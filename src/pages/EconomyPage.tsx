@@ -1,5 +1,6 @@
 import { AppShell, type PageProps } from "../components/AppShell";
 import { ImieCard, MetricCard, PolicyRateCard } from "../components/economy";
+import { ImieChart } from "../components/ImieChart";
 import { Panel, ResourceState } from "../components/Panel";
 import { formatEconomicPeriod, formatNumber } from "../format";
 import { useLiveResource } from "../hooks/useLiveResource";
@@ -20,11 +21,14 @@ export function EconomyPage(props: PageProps) {
         </div>
       ) : null}
       <div className="page-grid">
-        <Panel title="Wereldwijde aandelen" eyebrow="IMIE · koers" icon="trend" className="span-5" resource={economics}>
-          {data || !economics.loading ? <ImieCard data={data} large /> : <ResourceState loading empty="" />}
+        <Panel title="Wereldwijde aandelen" eyebrow="IMIE · koers en verloop" icon="trend" className="span-12" resource={economics}>
+          <div className="imie-layout">
+            {data || !economics.loading ? <ImieCard data={data} large /> : <ResourceState loading empty="" />}
+            <ImieChart />
+          </div>
         </Panel>
 
-        <Panel title="ECB-beleidsrentes" eyebrow="Europese Centrale Bank" icon="chart" className="span-7" resource={economics}>
+        <Panel title="ECB-beleidsrentes" eyebrow="Europese Centrale Bank" icon="chart" className="span-12" resource={economics}>
           {data?.policyRates?.rates.length ? (
             <div className="metric-grid">
               {data.policyRates.rates.map((rate) => <PolicyRateCard key={rate.id} rate={rate} />)}

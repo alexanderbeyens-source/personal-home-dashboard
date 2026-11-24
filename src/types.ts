@@ -348,3 +348,22 @@ export interface SportDetail {
   stale: boolean;
   warnings: SportWarning[];
 }
+
+export type ImieRange = "1d" | "5d" | "1m" | "3m" | "6m" | "ytd" | "1y" | "3y" | "5y" | "10y";
+
+export interface ImieHistory {
+  range: ImieRange;
+  basis: "xetra-intraday" | "nav-eur";
+  currency: "EUR";
+  points: { t: string; v: number }[];
+  changePercent: number | null;
+  from: string | null;
+  to: string | null;
+  session?: string | null;
+  previousClose?: number | null;
+  source: string;
+  sourceUrl: string;
+  note: string;
+  stale: boolean;
+  splits: { date: string; ratio: number }[];
+}

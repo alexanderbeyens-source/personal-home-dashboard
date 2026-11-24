@@ -507,6 +507,23 @@ button, select { font: inherit; color: inherit; }
 .imie-facts dt { color: var(--muted); }
 .imie-facts dd { margin: 0; font-family: var(--mono); text-align: right; }
 
+.imie-layout { display: grid; gap: 28px; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); align-items: start; }
+@media (max-width: 960px) { .imie-layout { grid-template-columns: 1fr; } }
+.imie-chart { display: grid; gap: 10px; min-width: 0; }
+.imie-chart.is-compact { margin: 14px 0 18px; }
+.range-tabs .segment { min-width: 44px; justify-content: center; }
+.imie-chart-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 26px; font-size: 15px; color: var(--text-soft); }
+.imie-chart-summary strong { font-weight: 600; color: var(--text); }
+.imie-chart-summary strong.is-down { color: var(--accent-strong); }
+.imie-chart-canvas { min-width: 0; touch-action: pan-y; }
+.imie-chart-canvas svg { display: block; overflow: visible; }
+.imie-grid { stroke: var(--border); stroke-width: 1; }
+.imie-baseline { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 4; }
+.imie-axis { fill: var(--muted); font-size: 13px; font-family: var(--font); }
+.imie-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.imie-cursor { stroke: var(--text-soft); stroke-width: 1; }
+.imie-dot { fill: var(--accent); stroke: var(--bg); stroke-width: 2; }
+
 .metric-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 .metric-grid.four { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .metric-grid.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 12px; }
