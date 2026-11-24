@@ -615,3 +615,20 @@ button, select { font: inherit; color: inherit; }
   .story-grid { grid-template-columns: 1fr; }
   .imie-price { font-size: 30px; }
 }
+
+/* ---------- Tasks ---------- */
+.task-groups { display: grid; gap: 18px; }
+.task-group-title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-soft); }
+.task-group-title span { font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--muted); }
+.task-list { list-style: none; margin: 0; padding: 0; }
+.task-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--border); }
+.task-row:last-child { border-bottom: 0; }
+.task-row label { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; min-height: 44px; padding: 6px 0; cursor: pointer; font-size: 15px; }
+.task-row input { flex-shrink: 0; width: 20px; height: 20px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.task-row input:disabled { cursor: progress; }
+.task-text { overflow-wrap: anywhere; }
+.task-row.is-done .task-text { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--muted); }
+.task-due { flex-shrink: 0; font-size: 13px; color: var(--muted); }
+.task-due.is-overdue { color: var(--accent-strong); font-weight: 600; }
+.task-empty { font-size: 14px; color: var(--muted); padding: 6px 0; }
+.task-error { margin-bottom: 12px; font-size: 14px; color: var(--warning); }

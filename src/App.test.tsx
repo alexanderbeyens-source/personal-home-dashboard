@@ -161,3 +161,67 @@ describe("Dashboard widgets", () => {
     expect(screen.queryByText(/^live$/i)).toBeNull();
   });
 });
+
+describe("Tasks widget", () => {
+  beforeEach(() => window.history.replaceState(null, "", "/"));
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  const tasks = (readingDone: boolean) => ({
+    today: "2026-11-24",
+    sections: [
+      { id: "daily", title: "Dagelijks", period: "Vandaag", items: [
+        { id: "aaaaaaaaaaaaaaaa", text: "Lezen", done: readingDone, doneDate: readingDone ? "2026-11-24" : null, due: null, overdue: false },
+      ] },
+      { id: "weekly", title: "Wekelijks", period: "Deze week", items: [] },
+      { id: "monthly", title: "Maandelijks", period: "Deze maand", items: [] },
+      { id: "once", title: "Eenmalig", period: "Eenmalig", items: [
+        { id: "bbbbbbbbbbbbbbbb", text: "Banden wisselen", done: false, doneDate: null, due: "2026-11-20", overdue: true },
+      ] },
+    ],
+    overdue: 1,
+    open: readingDone ? 1 : 2,
+    total: 2,
+    stale: false,
+    updatedAt: "2026-11-24T10:00:00Z",
+  });
+
+  function stub(toggleResponse: () => Response) {
+    const posts: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(String(input), "http://localhost").pathname;
+      if (path === "/api/auth/session") return jsonResponse({ user: { id: "1" } });
+      if (path === "/api/auth/csrf") return jsonResponse({ csrfToken: "csrf-token-from-auth" });
+      if (path === "/api/tasks") return jsonResponse(tasks(false));
+      if (path === "/api/tasks/toggle") {
+        posts.push({ method: init?.method, body: JSON.parse(String(init?.body)) });
+        return toggleResponse();
+      }
+      return jsonResponse({ error: "Live gegevens zijn tijdelijk niet beschikbaar." }, 503);
+    }));
+    return posts;
+  }
+
+  it("ticks a task with the CSRF token and shows overdue deadlines", async () => {
+    const posts = stub(() => jsonResponse(tasks(true)));
+    render(<App />);
+    const checkbox = await screen.findByRole("checkbox", { name: "Lezen" }) as HTMLInputElement;
+    expect(screen.getByText(/verlopen sinds 20 nov/)).toBeTruthy();
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+    await waitFor(() => expect(posts).toEqual([{ method: "POST", body: { id: "aaaaaaaaaaaaaaaa", done: true, csrfToken: "csrf-token-from-auth" } }]));
+    await waitFor(() => expect(screen.getByText("1/1 gedaan")).toBeTruthy());
+  });
+
+  it("restores the checkbox and explains when saving fails", async () => {
+    stub(() => jsonResponse({ error: "Live gegevens zijn tijdelijk niet beschikbaar." }, 502));
+    render(<App />);
+    const checkbox = await screen.findByRole("checkbox", { name: "Lezen" }) as HTMLInputElement;
+    fireEvent.click(checkbox);
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("Niet opgeslagen");
+    expect((screen.getByRole("checkbox", { name: "Lezen" }) as HTMLInputElement).checked).toBe(false);
+  });
+});

@@ -48,7 +48,7 @@ Do not make the service public without authentication. All API routes require th
 
 ## Pages
 
-`/` overview (briefing top 3, weather, agenda, sport and economy summaries) · `/briefing` full daily briefing · `/news` news centre · `/sport/<league>` full standings, fixtures, news and player lines · `/economie` full economic cockpit. The server falls back to `index.html` for these paths.
+`/` overview (briefing top 3, weather, agenda, sport and economy summaries) · `/briefing` full daily briefing · `/news` news centre · `/sport/<league>` full standings, fixtures, news and player lines · `/economie` full economic cockpit · `/taken` task list. The server falls back to `index.html` for these paths.
 
 ## Live data and integrations
 
@@ -64,6 +64,15 @@ Do not make the service public without authentication. All API routes require th
 - Projects: set `PROJECTS_JSON`, for example `[{\"name\":\"Portfolio\",\"url\":\"https://example.com\",\"description\":\"Personal site\"}]`.
 
 The calendar and Home Assistant cards show a connection state until configured. No fake/sample headlines, scores, events, or balances are used. Providers can rate-limit or change their public endpoints, so unavailable live sources are shown as errors rather than replaced with sample values.
+
+## Task list
+
+Tasks live in a Markdown file in a private GitHub repository, so you can edit them by hand or ask Claude (Claude Code, or Claude.ai with the GitHub connector) to add, change or remove tasks. The dashboard reads the file (60-second cache) and can tick tasks off; every tick is a normal commit in that repository. Start from `docs/tasks.example.md`.
+
+- Sections `## Dagelijks`, `## Wekelijks`, `## Maandelijks` and `## Eenmalig`; other headings and text are left untouched.
+- `- [x] Task (2026-11-24)` records when a task was last done. A recurring task counts as done when that date is in the current day, week (Monday to Sunday) or month, so daily/weekly/monthly tasks reopen by themselves. `@2026-12-01` in a task is a deadline; overdue deadlines are highlighted.
+- Setup: create a private repo (for example `northstar-tasks`) with `tasks.md`, create a **fine-grained** personal access token limited to that one repository with *Contents: read and write*, and set `GITHUB_TASKS_TOKEN`, `GITHUB_TASKS_REPO` (`owner/repo`) and optionally `GITHUB_TASKS_PATH` in Render. The token stays on the server.
+- Security: `POST /api/tasks/toggle` is the only state-changing route. It requires the allow-listed session, an `Origin` equal to `AUTH_URL`, Auth.js's double-submit CSRF token in the JSON body, a body of at most 2 kB and has its own rate limit (30/min). It can only flip one existing checkbox line; it cannot create, delete or rewrite other content.
 
 ## Mobility & Home · Phase 3 assessment
 

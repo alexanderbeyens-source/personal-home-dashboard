@@ -3,6 +3,7 @@ import { AppShell, type PageProps } from "../components/AppShell";
 import { CompactStory } from "../components/briefing";
 import { ImieCard, MetricCard, PolicyRateCard } from "../components/economy";
 import { Icon } from "../components/Icon";
+import { TasksPanel } from "../components/TasksPanel";
 import { Panel, ResourceState, SectionTitle } from "../components/Panel";
 import { FixtureList, LeagueTabs, PlayerLines, StandingsTable, isLeagueId, leagueLabel } from "../components/sports";
 import { LOCALE, formatNumber, formatTime, weatherLabel } from "../format";
@@ -271,6 +272,7 @@ export function Dashboard(props: PageProps) {
         <div className="span-4 side-stack">
           <WeatherPanel />
           <AgendaPanel />
+          <TasksPanel csrfToken={props.csrfToken} />
         </div>
         <SportWidget />
         <EconomySummary />

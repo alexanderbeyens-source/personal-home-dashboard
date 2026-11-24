@@ -37,3 +37,9 @@ services:
         sync: false
       - key: PROJECTS_JSON
         sync: false
+      - key: GITHUB_TASKS_TOKEN
+        sync: false
+      - key: GITHUB_TASKS_REPO
+        sync: false
+      - key: GITHUB_TASKS_PATH
+        sync: false
