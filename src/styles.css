@@ -397,6 +397,62 @@ button, select { font: inherit; color: inherit; }
 .agenda-list time { font-family: var(--mono); color: var(--accent); font-weight: 500; }
 .agenda-list small { display: block; font-size: 13px; color: var(--muted); }
 
+.weather.is-large .weather-temp { font-size: 72px; }
+
+.dayparts { list-style: none; margin: 18px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.daypart {
+  display: grid; justify-items: center; gap: 4px;
+  padding: 12px 8px; border-radius: var(--radius-sm);
+  background: var(--raised); border: 1px solid transparent;
+  color: var(--text-soft);
+}
+.daypart.is-current { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.daypart.is-past { opacity: 0.6; }
+.daypart-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.daypart.is-current .daypart-label { color: var(--accent); }
+.daypart-temp { font-size: 22px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.daypart-meta { font-size: 13px; color: var(--muted); }
+
+.day-list { list-style: none; margin: 16px 0 0; padding: 0; }
+.day-row {
+  display: grid; grid-template-columns: 92px 1fr 58px 76px; align-items: center; gap: 10px;
+  padding: 10px 0; border-top: 1px solid var(--border);
+  font-size: 15px;
+}
+.day-list.is-detailed .day-row, .day-list-head { grid-template-columns: 120px minmax(0, 1fr) 90px 90px 100px 90px; }
+.day-list-head { display: grid; gap: 10px; padding: 0 0 8px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.day-list-head span:nth-child(n+3) { text-align: right; }
+.day-list.is-detailed { margin-top: 0; }
+.day-name { font-weight: 600; }
+.day-condition { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--text-soft); }
+.day-condition span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.day-condition svg { flex-shrink: 0; color: var(--accent); }
+.day-rain, .day-extra { text-align: right; font-size: 14px; color: var(--text-soft); font-variant-numeric: tabular-nums; }
+.day-rain svg { display: inline-block; vertical-align: -1px; color: var(--muted); }
+.day-temps { text-align: right; font-variant-numeric: tabular-nums; }
+.day-temps span { color: var(--muted); margin-left: 6px; }
+
+.fact-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 20px 0 0; }
+.fact-grid div { padding: 10px 12px; border-radius: var(--radius-sm); background: var(--raised); }
+.fact-grid dt { font-size: 13px; color: var(--muted); }
+.fact-grid dd { margin: 2px 0 0; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.hourly-chart { margin: 0; display: grid; gap: 10px; }
+.hourly-chart svg { width: 100%; height: auto; display: block; touch-action: pan-y; cursor: crosshair; }
+.hourly-readout { min-height: 24px; font-size: 14px; color: var(--text-soft); }
+.hourly-readout strong { color: var(--text); font-family: var(--mono); }
+.chart-grid { stroke: var(--border); stroke-width: 1; }
+.chart-day { stroke: var(--border-strong); stroke-dasharray: 3 4; }
+.chart-axis { fill: var(--muted); font-size: 12px; font-family: var(--font); }
+.chart-line { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.chart-rain { fill: rgba(120, 170, 255, 0.45); }
+.chart-cursor { stroke: var(--text-soft); stroke-width: 1; }
+.chart-dot { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--muted); }
+.chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend-line { width: 16px; height: 3px; border-radius: 2px; background: var(--accent); }
+.legend-bar { width: 10px; height: 12px; border-radius: 2px; background: rgba(120, 170, 255, 0.45); }
+
 /* ---------- Sport ---------- */
 .league-tabs {
   display: flex; gap: 6px;
@@ -610,6 +666,10 @@ button, select { font: inherit; color: inherit; }
   .standings th, .standings td { padding: 9px 6px; }
   .standing-team span:not(.focus-tag) { white-space: normal; }
   .weather-temp { font-size: 48px; }
+  .day-list.is-detailed .day-row { grid-template-columns: 84px minmax(0, 1fr) 58px 76px; }
+  .day-list.is-detailed .day-extra, .day-list-head { display: none; }
+  .day-row, .day-list.is-detailed .day-row { grid-template-columns: minmax(0, 1fr) 28px 58px 70px; gap: 8px; }
+  .day-condition span { display: none; }
   .filters select { min-width: 0; width: 100%; }
   .filters label { flex: 1 1 140px; }
   .story-grid { grid-template-columns: 1fr; }
