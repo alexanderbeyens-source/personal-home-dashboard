@@ -10,8 +10,8 @@ import { createDailyBriefingService } from "./briefing.js";
 import { loadNbaData, loadNbaPlayers, mapSportsEvents } from "./data.js";
 import { createEconomicLoaders, createEconomicsService, isXetraTradingTime } from "./economics.js";
 import { createNewsService, isAllowedFeedContentType } from "./news.js";
+import { INTERVALS_API, createHealthService, healthConfigFromEnv } from "./health.js";
 import { createImieHistoryService } from "./imie-history.js";
-
 import { calendarsFromEnv, createCalendarService, isCalendarConfigured } from "./calendar.js";
 import { createSportsService } from "./sports.js";
 import { isAllowedOrigin, verifyCsrfToken } from "./csrf.js";
@@ -415,6 +415,18 @@ async function githubTasksRequest(method, body) {
 
 const tasksService = createTasksService({ github: githubTasksRequest });
 
+// intervals.icu with the personal API key (basic auth, username "API_KEY"). The key is
+// only sent to intervals.icu and never logged or returned.
+const healthService = createHealthService({
+  getJson: (path) => {
+    const config = healthConfigFromEnv(process.env);
+    return fetchJson(`${INTERVALS_API}${path}`, {
+      redirect: "error",
+      headers: { authorization: `Basic ${Buffer.from(`API_KEY:${config.apiKey}`).toString("base64")}` },
+    });
+  },
+});
+
 function requireConfig(keys) {
   const missing = keys.filter((key) => !process.env[key]);
   if (missing.length) {
@@ -648,6 +660,12 @@ async function routeApiUncached(url) {
       news: result.articles.slice(0, 2),
       warnings: result.warnings.map((warning) => warning.message),
     };
+  }
+
+  if (url.pathname === "/api/health") {
+    const config = healthConfigFromEnv(process.env);
+    if (!config) requireConfig(["INTERVALS_ATHLETE_ID", "INTERVALS_API_KEY"]);
+    return healthService.get({ athleteId: config.athleteId, refresh: url.searchParams.get("refresh") === "1" });
   }
 
   if (url.pathname === "/api/tasks") {

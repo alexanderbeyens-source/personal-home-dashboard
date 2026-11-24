@@ -95,6 +95,8 @@ describe("protected API routes", () => {
       GITHUB_TASKS_REPO: "",
       CALENDAR_ICS_URLS: "",
       HOME_ASSISTANT_URL: "",
+      INTERVALS_ATHLETE_ID: "",
+      INTERVALS_API_KEY: "",
       HOME_ASSISTANT_TOKEN: "",
     });
     child = server.child;
@@ -105,7 +107,7 @@ describe("protected API routes", () => {
     });
     const headers = { cookie: `${sessionCookieName}=${sessionToken}` };
 
-    for (const route of ["/api/calendar", "/api/home-assistant", "/api/tasks"]) {
+    for (const route of ["/api/calendar", "/api/home-assistant", "/api/tasks", "/api/health"]) {
       const response = await fetch(`${server.baseUrl}${route}`, { headers });
       expect(response.status).toBe(503);
       const body = await response.json();
@@ -113,7 +115,7 @@ describe("protected API routes", () => {
         error: "Deze koppeling is niet geconfigureerd op de server.",
         code: "not_configured",
       });
-      expect(JSON.stringify(body)).not.toMatch(/CALENDAR_ICS_URL|HOME_ASSISTANT|GITHUB_TASKS/);
+      expect(JSON.stringify(body)).not.toMatch(/CALENDAR_ICS_URL|HOME_ASSISTANT|GITHUB_TASKS|INTERVALS/);
     }
 
     const unknown = await fetch(`${server.baseUrl}/api/unknown-route`, { headers });

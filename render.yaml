@@ -45,3 +45,7 @@ services:
         sync: false
       - key: GITHUB_TASKS_PATH
         sync: false
+      - key: INTERVALS_ATHLETE_ID
+        sync: false
+      - key: INTERVALS_API_KEY
+        sync: false

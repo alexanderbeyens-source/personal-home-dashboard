@@ -3,6 +3,7 @@ import { AppShell, type PageProps } from "../components/AppShell";
 import { AgendaDays, groupAgenda } from "../components/agenda";
 import { CompactStory } from "../components/briefing";
 import { ImieCard, MetricCard, PolicyRateCard } from "../components/economy";
+import { HealthPanel } from "../components/HealthPanel";
 import { Icon } from "../components/Icon";
 import { TasksPanel } from "../components/TasksPanel";
 import { ImieChart } from "../components/ImieChart";
@@ -298,6 +299,7 @@ export function Dashboard(props: PageProps) {
         </div>
         <SportWidget />
         <EconomySummary />
+        <HealthPanel />
         <OptionalPanels />
       </div>
     </AppShell>

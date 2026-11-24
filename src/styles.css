@@ -728,3 +728,13 @@ button, select { font: inherit; color: inherit; }
 .task-due.is-overdue { color: var(--accent-strong); font-weight: 600; }
 .task-empty { font-size: 14px; color: var(--muted); padding: 6px 0; }
 .task-error { margin-bottom: 12px; font-size: 14px; color: var(--warning); }
+
+/* ---------- Health ---------- */
+.health-subtitle { margin: 18px 0 4px; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-soft); }
+.activity-list { list-style: none; margin: 0; padding: 0; }
+.activity-list li { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 15px; }
+.activity-list li:last-child { border-bottom: 0; }
+.activity-date { font-size: 14px; color: var(--muted); }
+.activity-body { display: grid; min-width: 0; }
+.activity-body strong { font-weight: 600; overflow-wrap: anywhere; }
+.activity-body small { font-size: 13px; color: var(--muted); }

@@ -398,6 +398,45 @@ export interface SportDetail {
   warnings: SportWarning[];
 }
 
+export interface HealthDay {
+  date: string;
+  sleepSeconds: number | null;
+  sleepScore: number | null;
+  restingHr: number | null;
+  hrv: number | null;
+  steps: number | null;
+  avgSleepingHr: number | null;
+  readiness: number | null;
+  spO2: number | null;
+  respiration: number | null;
+  weight: number | null;
+}
+
+export type HealthMetricId = "sleepSeconds" | "sleepScore" | "restingHr" | "hrv" | "steps";
+
+export interface HealthActivity {
+  id: string;
+  name: string | null;
+  type: string | null;
+  start: string;
+  movingSeconds: number | null;
+  distanceMeters: number | null;
+  averageHr: number | null;
+  calories: number | null;
+  trainingLoad: number | null;
+}
+
+export interface HealthData {
+  today: string;
+  days: HealthDay[];
+  summary: Record<HealthMetricId, { value: number | null; date: string | null; average7d: number | null }>;
+  activities: HealthActivity[];
+  stale: boolean;
+  warnings: { source: string; message: string; stale: boolean }[];
+  source: string;
+  sourceUrl: string;
+}
+
 export interface TaskItem {
   id: string;
   text: string;

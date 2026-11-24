@@ -48,7 +48,7 @@ Do not make the service public without authentication. All API routes require th
 
 ## Pages
 
-`/` overview (briefing top 3, weather, agenda, sport and economy summaries) · `/briefing` full daily briefing · `/agenda` the next 14 days from all calendars · `/news` news centre · `/sport/<league>` full standings, fixtures, news and player lines · `/economie` full economic cockpit · `/weer` detailed forecast · `/taken` task list. The server falls back to `index.html` for these paths.
+`/` overview (briefing top 3, weather, agenda, sport and economy summaries) · `/briefing` full daily briefing · `/agenda` the next 14 days from all calendars · `/news` news centre · `/sport/<league>` full standings, fixtures, news and player lines · `/economie` full economic cockpit · `/weer` detailed forecast · `/taken` task list · `/gezondheid` health data. The server falls back to `index.html` for these paths.
 
 ## Live data and integrations
 
@@ -75,6 +75,14 @@ Tasks live in a Markdown file in a private GitHub repository, so you can edit th
 - `- [x] Task (2026-11-24)` records when a task was last done. A recurring task counts as done when that date is in the current day, week (Monday to Sunday) or month, so daily/weekly/monthly tasks reopen by themselves. `@2026-12-01` in a task is a deadline; overdue deadlines are highlighted.
 - Setup: create a private repo (for example `northstar-tasks`) with `tasks.md`, create a **fine-grained** personal access token limited to that one repository with *Contents: read and write*, and set `GITHUB_TASKS_TOKEN`, `GITHUB_TASKS_REPO` (`owner/repo`) and optionally `GITHUB_TASKS_PATH` in Render. The token stays on the server.
 - Security: `POST /api/tasks/toggle` is the only state-changing route. It requires the allow-listed session, an `Origin` equal to `AUTH_URL`, Auth.js's double-submit CSRF token in the JSON body, a body of at most 2 kB and has its own rate limit (30/min). It can only flip one existing checkbox line; it cannot create, delete or rewrite other content.
+
+## Health data (Garmin via intervals.icu)
+
+Garmin's official Health API is only available to businesses, and Apple Health has no web API, so Northstar reads Garmin data through [intervals.icu](https://intervals.icu/) (free), which syncs with Garmin Connect.
+
+- Data: per day sleep duration, sleep score, resting heart rate, HRV and steps for the last 14 days (`/api/v1/athlete/{id}/wellness`), plus the latest activities of the last 30 days (`/activities`). Field names follow intervals.icu's OpenAPI spec. Values that are missing or zero are shown as "niet beschikbaar", never as 0. Cached 30 minutes with last-known-good fallback; if one of the two calls fails, the other still shows.
+- Setup: create an intervals.icu account, connect Garmin in its settings with wellness sync enabled, create an API key under *Settings → Developer settings*, and set `INTERVALS_ATHLETE_ID` (e.g. `i12345`) and `INTERVALS_API_KEY` in Render. The key is sent only to intervals.icu (HTTP basic auth, username `API_KEY`) and never reaches the browser. If only some wellness fields arrive, reconnecting Garmin in intervals.icu usually helps.
+- Apple Health was evaluated and not implemented: it would need a paid forwarding app on the iPhone plus persistent storage, which Northstar does not have.
 
 ## Mobility & Home · Phase 3 assessment
 
