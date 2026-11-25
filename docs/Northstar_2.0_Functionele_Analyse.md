@@ -788,8 +788,9 @@ Deze maatregelen moeten behouden blijven.
 -   Secrets niet in frontendbundles plaatsen.
 -   Secrets niet in logs of foutmeldingen opnemen.
 -   Documenteer variabelen zonder hun waarden te publiceren.
--   Smartcar: `SMARTCAR_CLIENT_ID`, `SMARTCAR_CLIENT_SECRET` en
-    `SMARTCAR_REDIRECT_URI` staan alleen in Render. Het client secret en
+-   Smartcar: `SMARTCAR_CLIENT_ID`, `SMARTCAR_CLIENT_SECRET`,
+    `SMARTCAR_REDIRECT_URI` en `SMARTCAR_APPLICATION_ID` (geen geheim,
+    nodig voor de koppelknop) staan alleen in Render. Het client secret en
     de Smartcar-tokens blijven server-side en komen niet in logs,
     foutmeldingen of de frontend.
 -   Controleer `.gitignore` en Git history op onbedoeld toegevoegde
@@ -954,8 +955,9 @@ Smartcar-variabelen niet ingesteld zijn.
 Beperkingen: - de laatste geldige waarde staat in het geheugen en is na
 een herstart weg tot de volgende geslaagde ophaling; - de maandlimiet
 van het Free-plan per voertuig is niet gepubliceerd; - de Connect-URL
-gebruikt de client-ID als `application_id` (volgens de voorbeelden in
-de Smartcar-documentatie dezelfde waarde).
+gebruikt `SMARTCAR_APPLICATION_ID`; die verschilt van de client-ID bij
+client-ID's van de vorm `client_…` (vastgesteld 2026-11-25, toegevoegd
+met akkoord van de gebruiker).
 
 ------------------------------------------------------------------------
 

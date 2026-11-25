@@ -11,7 +11,7 @@ import {
   smartcarConfigFromEnv,
 } from "./smartcar.js";
 
-const config = { clientId: "8229df9f-91a0-4ff0-a1ae-a1f38ee24d07", clientSecret: "super-secret-value", redirectUri: "https://northstar.example/api/smartcar/callback" };
+const config = { clientId: "client_01ABCDEFGHJKMNPQRSTVWXYZ00", clientSecret: "super-secret-value", applicationId: "8229df9f-91a0-4ff0-a1ae-a1f38ee24d07", redirectUri: "https://northstar.example/api/smartcar/callback" };
 const secret = "a-dummy-test-secret-that-is-long-enough";
 
 const connection = (overrides = {}) => ({
@@ -64,11 +64,37 @@ const happyRoutes = (overrides = {}) => ({
 });
 
 describe("smartcarConfigFromEnv", () => {
-  const env = { SMARTCAR_CLIENT_ID: config.clientId, SMARTCAR_CLIENT_SECRET: config.clientSecret, SMARTCAR_REDIRECT_URI: config.redirectUri, AUTH_URL: "https://northstar.example", NODE_ENV: "production" };
+  const env = { SMARTCAR_CLIENT_ID: config.clientId, SMARTCAR_CLIENT_SECRET: config.clientSecret, SMARTCAR_APPLICATION_ID: config.applicationId, SMARTCAR_REDIRECT_URI: config.redirectUri, AUTH_URL: "https://northstar.example", NODE_ENV: "production" };
 
   it("returns null when not configured and the config when valid", () => {
     expect(smartcarConfigFromEnv({ ...env, SMARTCAR_CLIENT_SECRET: "" })).toBeNull();
     expect(smartcarConfigFromEnv(env)).toEqual(config);
+  });
+
+  it("uses the client ID for Connect when no separate Application ID is set", () => {
+    expect(smartcarConfigFromEnv({ ...env, SMARTCAR_APPLICATION_ID: "" })?.applicationId).toBe(config.clientId);
+    let error;
+    try {
+      smartcarConfigFromEnv({ ...env, SMARTCAR_APPLICATION_ID: "not valid!" });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error?.reason).toBe("invalid-application-id");
+  });
+
+  it("accepts client IDs with underscores and reports which credential is malformed", () => {
+    expect(smartcarConfigFromEnv({ ...env, SMARTCAR_CLIENT_ID: "client_01M89G2A1D2Z9FCBPTT3GN64J4" })?.clientId).toBe("client_01M89G2A1D2Z9FCBPTT3GN64J4");
+    const reason = (overrides) => {
+      try {
+        smartcarConfigFromEnv({ ...env, ...overrides });
+      } catch (error) {
+        return error.reason;
+      }
+      return null;
+    };
+    expect(reason({ SMARTCAR_CLIENT_ID: '"client_01M89G2A1D2Z9FCBPTT3GN64J4"' })).toBe("invalid-client-id");
+    expect(reason({ SMARTCAR_CLIENT_SECRET: '"quoted-secret-value"' })).toBe("invalid-secret");
+    expect(reason({ SMARTCAR_CLIENT_SECRET: "has a space inside" })).toBe("invalid-secret");
   });
 
   it("rejects a redirect URI that does not point back to this Northstar callback, without leaking values", () => {
@@ -104,7 +130,8 @@ describe("connect state", () => {
     const url = new URL(buildConnectUrl(config, "state-1"));
     expect(url.origin).toBe("https://connect.smartcar.com");
     expect(url.searchParams.get("response_type")).toBe("none");
-    expect(url.searchParams.get("application_id")).toBe(config.clientId);
+    expect(url.searchParams.get("application_id")).toBe(config.applicationId);
+    expect(url.href).not.toContain(config.clientId);
     expect(url.searchParams.get("redirect_uri")).toBe(config.redirectUri);
     expect(url.searchParams.get("mode")).toBe("live");
     expect(url.searchParams.has("scope")).toBe(false);

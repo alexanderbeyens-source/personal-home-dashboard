@@ -57,3 +57,5 @@ services:
         sync: false
       - key: SMARTCAR_REDIRECT_URI
         sync: false
+      - key: SMARTCAR_APPLICATION_ID
+        sync: false

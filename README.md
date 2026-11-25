@@ -107,10 +107,10 @@ Setup (once):
 1. In the Smartcar dashboard, under **Vehicle Access**, select only state of charge, range, charging status and charging cable connected. Do not select location or any command.
 2. Under **API Credentials**, create a client secret (shown once) and copy the client ID and secret directly into Render.
 3. Add the redirect URI `https://YOUR-SERVICE.onrender.com/api/smartcar/callback` (the same address as `AUTH_URL`).
-4. In Render, set `SMARTCAR_CLIENT_ID`, `SMARTCAR_CLIENT_SECRET` and `SMARTCAR_REDIRECT_URI` (the URI from step 3). The server rejects a redirect URI that does not point to `/api/smartcar/callback` on `AUTH_URL`.
+4. In Render, set `SMARTCAR_CLIENT_ID`, `SMARTCAR_CLIENT_SECRET`, `SMARTCAR_REDIRECT_URI` (the URI from step 3) and `SMARTCAR_APPLICATION_ID` (under **Configuration → Application details**; not a secret). The server rejects a redirect URI that does not point to `/api/smartcar/callback` on `AUTH_URL`.
 5. Open the dashboard, tap **Auto koppelen**, sign in with the Mercedes me account and approve. Mercedes me connect services must be active.
 
-The Connect URL uses the client ID as `application_id`; Smartcar's documentation shows the same value for both. If the Smartcar dashboard shows a different Application ID, the Connect step fails and an extra variable is needed.
+The Connect URL needs the Application ID, which differs from the client ID for client IDs of the form `client_…`. `SMARTCAR_APPLICATION_ID` is optional only for older apps where both are the same value; without it the client ID is used. The card stays hidden until the client ID, secret and redirect URI are set.
 
 ## Mobility & Home · Phase 3 assessment (revised 25 November 2026)
 
