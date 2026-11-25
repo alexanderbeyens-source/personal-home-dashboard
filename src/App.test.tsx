@@ -353,6 +353,25 @@ describe("Tasks widget", () => {
     expect((screen.getByLabelText("Nieuwe taak") as HTMLInputElement).value).toBe("");
   });
 
+  it("adds a weekly task from the tasks page and shows it in its section", async () => {
+    window.history.replaceState(null, "", "/taken");
+    const base = tasks(false);
+    const added = { id: "dddddddddddddddd", text: "Planten water geven", done: false, doneDate: null, due: null, overdue: false };
+    const withNew = { ...base, open: base.open + 1, total: base.total + 1, sections: base.sections.map((section) => (section.id === "weekly" ? { ...section, items: [added] } : section)) };
+    const posts = stub(() => jsonResponse(tasks(true)), () => jsonResponse(withNew));
+    render(<App />);
+    const input = await screen.findByLabelText("Nieuwe taak");
+    const weekly = (await screen.findByRole("heading", { name: "Wekelijks" })).closest("section") as HTMLElement;
+    expect(within(weekly).getByText("Geen taken.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Rubriek"), { target: { value: "weekly" } });
+    fireEvent.change(input, { target: { value: "Planten water geven" } });
+    fireEvent.click(screen.getByRole("button", { name: "Toevoegen" }));
+    await waitFor(() => expect(posts).toEqual([{ method: "POST", path: "/api/tasks/add", body: { section: "weekly", text: "Planten water geven", due: null, csrfToken: "csrf-token-from-auth" } }]));
+    expect(await within(weekly).findByRole("checkbox", { name: "Planten water geven" })).toBeTruthy();
+    expect(screen.getByText("Toegevoegd aan Wekelijks.").getAttribute("role")).toBe("status");
+    expect((screen.getByLabelText("Nieuwe taak") as HTMLInputElement).value).toBe("");
+  });
+
   it("keeps the typed task and explains when adding fails", async () => {
     stub(() => jsonResponse(tasks(true)), () => jsonResponse({ error: "Een deadline kan alleen bij een eenmalige taak." }, 400));
     render(<App />);
