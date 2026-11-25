@@ -126,7 +126,7 @@ describe("connect state", () => {
     expect(verify(old, secret)).toBe(false);
   });
 
-  it("builds a read-only v3 Connect URL without a secret or scope override", () => {
+  it("builds a read-only v3 Connect URL that asks only for battery and charge permissions", () => {
     const url = new URL(buildConnectUrl(config, "state-1"));
     expect(url.origin).toBe("https://connect.smartcar.com");
     expect(url.searchParams.get("response_type")).toBe("none");
@@ -134,7 +134,7 @@ describe("connect state", () => {
     expect(url.href).not.toContain(config.clientId);
     expect(url.searchParams.get("redirect_uri")).toBe(config.redirectUri);
     expect(url.searchParams.get("mode")).toBe("live");
-    expect(url.searchParams.has("scope")).toBe(false);
+    expect(url.searchParams.get("scope")).toBe("read_battery read_charge");
     expect(url.href).not.toContain(config.clientSecret);
   });
 });
@@ -262,7 +262,7 @@ describe("createSmartcarService", () => {
     const onDiagnostic = vi.fn();
     const request = mockSmartcar(happyRoutes({ "/vehicles/veh-1/signals": ok({ data: [failed("tractionbattery-stateofcharge"), failed("tractionbattery-range")] }) }));
     expect((await createSmartcarService({ request, onDiagnostic }).get({ config })).state).toBe("reauth_required");
-    expect(onDiagnostic).toHaveBeenCalledWith("reauth_required source=signal error=CONNECTED_SERVICES_ACCOUNT/AUTHENTICATION_FAILED/? count=2 connection=ACTIVE");
+    expect(onDiagnostic).toHaveBeenCalledWith("reauth_required source=signal error=CONNECTED_SERVICES_ACCOUNT/AUTHENTICATION_FAILED/? count=2 connection=ACTIVE permissions=read_battery,read_charge");
   });
 
   it("treats VEHICLE_MISSING and NO_VEHICLES as not connected instead of re-authorization", async () => {

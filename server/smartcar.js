@@ -22,6 +22,10 @@ export const SIGNALS = {
   cableConnected: "charge-ischargingcableconnected",
 };
 
+// Read-only permissions Connect asks for, so the four signals do not depend on the dashboard's
+// Vehicle Access selection (a Connect `scope` overrides it). No location, no commands.
+export const CONNECT_SCOPE = ["read_battery", "read_charge"];
+
 const STATE_MAX_AGE_MS = 15 * 60 * 1000;
 // Errors that only a new Smartcar Connect flow fixes. VEHICLE_MISSING and NO_VEHICLES are not
 // among them (Smartcar documents no re-authentication for those): they mean "no vehicle".
@@ -122,6 +126,7 @@ export function buildConnectUrl(config, state) {
     application_id: config.applicationId,
     redirect_uri: config.redirectUri,
     mode: "live",
+    scope: CONNECT_SCOPE.join(" "),
     state,
   });
   return `${SMARTCAR_CONNECT_URL}?${query}`;
@@ -160,6 +165,7 @@ export function pickConnection(json) {
       userId: typeof item.attributes?.user?.id === "string" ? item.attributes.user.id : typeof item.relationships?.user?.data?.id === "string" ? item.relationships.user.data.id : null,
       status: typeof item.attributes?.status?.name === "string" ? item.attributes.status.name : null,
       createdAt: isoOrNull(item.meta?.createdAt) ?? "",
+      permissions: Array.isArray(item.attributes?.permissions) ? item.attributes.permissions.filter((value) => typeof value === "string").slice(0, 30) : null,
       vehicle: {
         make: typeof item.attributes?.vehicle?.make === "string" ? item.attributes.vehicle.make.slice(0, 40) : null,
         model: typeof item.attributes?.vehicle?.model === "string" ? item.attributes.vehicle.model.slice(0, 60) : null,
@@ -398,7 +404,8 @@ export function createSmartcarService({
       // One signal without permission must not hide the others: only ask for a new Connect flow
       // when nothing usable came back and Smartcar itself points to re-authentication.
       if (reauthErrors.length) {
-        return reauth(connection.vehicle, "signal", `error=${describeError(reauthErrors[0])} count=${reauthErrors.length} connection=${word(connection.status)}`);
+        const granted = connection.permissions ? connection.permissions.map(word).join(",") || "none" : "unknown";
+        return reauth(connection.vehicle, "signal", `error=${describeError(reauthErrors[0])} count=${reauthErrors.length} connection=${word(connection.status)} permissions=${granted}`);
       }
       const vehicleError = [...signals.values()].map((signal) => signal.error).find(Boolean);
       const reason = ["ASLEEP", "UNREACHABLE"].includes(vehicleError?.code) ? "vehicle-offline" : "no-signals";
