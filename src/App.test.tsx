@@ -416,6 +416,59 @@ describe("Health widget", () => {
   });
 });
 
+describe("Duolingo widget", () => {
+  beforeEach(() => window.history.replaceState(null, "", "/"));
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  const duolingo = (overrides: Record<string, unknown> = {}) => ({
+    today: "2026-11-25",
+    streak: 42,
+    streakStart: "2026-10-15",
+    lastPracticeDate: "2026-11-24",
+    status: "pending",
+    totalXp: 12345,
+    currentCourse: { id: "DUOLINGO_ES_NL", title: "Spaans", learningLanguage: "es", xp: 9000 },
+    courses: [
+      { id: "DUOLINGO_ES_NL", title: "Spaans", learningLanguage: "es", xp: 9000 },
+      { id: "DUOLINGO_FR_NL", title: "Frans", learningLanguage: "fr", xp: 300 },
+    ],
+    stale: false,
+    updatedAt: "2026-11-25T10:00:00Z",
+    profileUrl: "https://www.duolingo.com/profile/learner",
+    ...overrides,
+  });
+
+  it("shows the streak, whether today is still to do, XP per course and the profile link", async () => {
+    mockApi({ "/api/duolingo": () => jsonResponse(duolingo()) });
+    render(<App />);
+    const panel = (await screen.findByRole("heading", { name: "Duolingo" })).closest("section") as HTMLElement;
+    expect(await within(panel).findByText("Vandaag nog niet geoefend")).toBeTruthy();
+    expect(within(panel).getByText("42")).toBeTruthy();
+    expect(within(panel).getByText("12.345")).toBeTruthy();
+    expect(within(panel).getByText(/Nu: Spaans · 9\.000 XP/)).toBeTruthy();
+    expect(within(panel).getByText("Frans")).toBeTruthy();
+    expect(within(panel).getByRole("link", { name: /Profiel op Duolingo/ }).getAttribute("href")).toBe("https://www.duolingo.com/profile/learner");
+  });
+
+  it("never shows a missing streak or XP as zero", async () => {
+    mockApi({ "/api/duolingo": () => jsonResponse(duolingo({ streak: null, streakStart: null, status: null, totalXp: null, currentCourse: null, courses: [] })) });
+    render(<App />);
+    const panel = (await screen.findByRole("heading", { name: "Duolingo" })).closest("section") as HTMLElement;
+    expect(await within(panel).findAllByText("Niet beschikbaar")).toHaveLength(2);
+    expect(within(panel).queryByText("0")).toBeNull();
+  });
+
+  it("explains how to connect Duolingo when it is not configured", async () => {
+    mockApi({ "/api/duolingo": () => jsonResponse(notConfigured, 503) });
+    render(<App />);
+    const panel = (await screen.findByRole("heading", { name: "Duolingo" })).closest("section") as HTMLElement;
+    expect(await within(panel).findByText(/Stel je Duolingo-gebruikersnaam in/)).toBeTruthy();
+  });
+});
+
 describe("Agenda configuration errors", () => {
   beforeEach(() => window.history.replaceState(null, "", "/"));
   afterEach(() => {

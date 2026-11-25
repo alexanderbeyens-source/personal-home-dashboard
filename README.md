@@ -84,6 +84,14 @@ Garmin's official Health API is only available to businesses, and Apple Health h
 - Setup: create an intervals.icu account, connect Garmin in its settings with wellness sync enabled, create an API key under *Settings → Developer settings*, and set `INTERVALS_ATHLETE_ID` (e.g. `i12345`) and `INTERVALS_API_KEY` in Render. The key is sent only to intervals.icu (HTTP basic auth, username `API_KEY`) and never reaches the browser. If only some wellness fields arrive, reconnecting Garmin in intervals.icu usually helps.
 - Apple Health was evaluated and not implemented: it would need a paid forwarding app on the iPhone plus persistent storage, which Northstar does not have.
 
+## Duolingo (unofficial public profile)
+
+Duolingo has no official public API. Northstar reads the streak and XP from the unofficial, undocumented endpoint behind duolingo.com profile pages (`https://www.duolingo.com/2017-06-30/users?username=…`). It needs no login, token or password, only the username of a **public** profile.
+
+- Data: current streak and its start date, whether today's lesson is done (the streak's last day is today), still to do (yesterday) or the streak is broken, total XP, the current course and up to five courses by XP. All other profile fields are dropped on the server. Missing values are shown as "niet beschikbaar", never as 0. Cached 15 minutes with last-known-good fallback (then labelled stale).
+- Setup: make sure the Duolingo profile is public and set `DUOLINGO_USERNAME` in Render. Only the username is sent to duolingo.com; nothing reaches the browser except the mapped values and a link to the profile.
+- Caveat: because the endpoint is unofficial it can change, be rate limited or blocked without notice. Northstar then shows an error or stale state; remove `DUOLINGO_USERNAME` to hide the data.
+
 ## Mobility & Home · Phase 3 assessment
 
 This section records an integration-availability assessment only. Per the functional analysis (section 4 and 13.6), Mobility & Home is not part of the user interface: the former `/mobility` page has been removed and no device data is contacted or simulated. No device adapter or credential variable has been added because neither option meets the current requirements for a safe, supported, no-cost, independently verifiable integration.

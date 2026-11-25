@@ -11,6 +11,7 @@ import { loadNbaData, loadNbaPlayers, mapSportsEvents } from "./data.js";
 import { createEconomicLoaders, createEconomicsService, isXetraTradingTime } from "./economics.js";
 import { createNewsService, isAllowedFeedContentType } from "./news.js";
 import { INTERVALS_API, createHealthService, healthConfigFromEnv } from "./health.js";
+import { DUOLINGO_API, createDuolingoService, duolingoConfigFromEnv } from "./duolingo.js";
 import { createImieHistoryService } from "./imie-history.js";
 import { calendarsFromEnv, createCalendarService, isCalendarConfigured } from "./calendar.js";
 import { logFetchFailure, upstreamError } from "./fetch-errors.js";
@@ -429,6 +430,19 @@ const healthService = createHealthService({
   },
 });
 
+// Duolingo's unofficial public profile endpoint: only the username goes out, no credentials.
+const duolingoService = createDuolingoService({
+  getJson: async (username) => {
+    const response = await fetch(`${DUOLINGO_API}?username=${encodeURIComponent(username)}`, {
+      signal: AbortSignal.timeout(12000),
+      redirect: "error",
+      headers: { accept: "application/json", "user-agent": "NorthstarHomeDashboard/0.1" },
+    });
+    if (!response.ok) throw upstreamError("Data source returned an error status.", { status: response.status });
+    return JSON.parse(await readLimitedBody(response, 512 * 1024));
+  },
+});
+
 function requireConfig(keys) {
   const missing = keys.filter((key) => !process.env[key]);
   if (missing.length) {
@@ -663,6 +677,12 @@ async function routeApiUncached(url) {
       news: result.articles.slice(0, 2),
       warnings: result.warnings.map((warning) => warning.message),
     };
+  }
+
+  if (url.pathname === "/api/duolingo") {
+    const config = duolingoConfigFromEnv(process.env);
+    if (!config) requireConfig(["DUOLINGO_USERNAME"]);
+    return duolingoService.get({ username: config.username, refresh: url.searchParams.get("refresh") === "1" });
   }
 
   if (url.pathname === "/api/health") {

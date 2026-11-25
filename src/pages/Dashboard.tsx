@@ -3,6 +3,7 @@ import { AppShell, type PageProps } from "../components/AppShell";
 import { AgendaDays, groupAgenda } from "../components/agenda";
 import { CompactStory } from "../components/briefing";
 import { ImieCard, MetricCard, PolicyRateCard } from "../components/economy";
+import { DuolingoPanel } from "../components/DuolingoPanel";
 import { HealthPanel } from "../components/HealthPanel";
 import { Icon } from "../components/Icon";
 import { TasksPanel } from "../components/TasksPanel";
@@ -304,6 +305,7 @@ export function Dashboard(props: PageProps) {
           <AgendaPanel />
           <TasksPanel csrfToken={props.csrfToken} />
           <HealthPanel />
+          <DuolingoPanel />
         </div>
       </div>
     </AppShell>
