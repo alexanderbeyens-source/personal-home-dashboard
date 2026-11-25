@@ -52,6 +52,12 @@ export function smartcarConfigFromEnv(env) {
   if (!/^[A-Za-z0-9_.-]{8,100}$/.test(clientId)) {
     throw configError("De Smartcar-client-ID is ongeldig ingesteld: alleen letters, cijfers, _, . en - (zonder aanhalingstekens of spaties).", "invalid-client-id");
   }
+  // Smartcar Connect needs the Application ID (Configuration → Application details), which differs
+  // from the client ID for "client_…" credentials. Older apps used one value for both.
+  const applicationId = env.SMARTCAR_APPLICATION_ID?.trim() || clientId;
+  if (!/^[A-Za-z0-9_.-]{8,100}$/.test(applicationId)) {
+    throw configError("De Smartcar-Application ID is ongeldig ingesteld: alleen letters, cijfers, _, . en - (zonder aanhalingstekens of spaties).", "invalid-application-id");
+  }
   if (clientSecret.length < 8 || clientSecret.length > 500 || /\s|^["']|["']$/.test(clientSecret)) {
     throw configError("Het Smartcar-client secret is ongeldig ingesteld: controleer op aanhalingstekens of spaties.", "invalid-secret");
   }
@@ -72,7 +78,7 @@ export function smartcarConfigFromEnv(env) {
   if (!redirect || !secureEnough || redirect.origin !== appOrigin || redirect.pathname !== SMARTCAR_CALLBACK_PATH || redirect.search || redirect.hash) {
     throw configError("De Smartcar-redirect-URI moet naar /api/smartcar/callback op dit Northstar-adres wijzen.", "invalid-redirect");
   }
-  return { clientId, clientSecret, redirectUri: redirect.href };
+  return { clientId, clientSecret, applicationId, redirectUri: redirect.href };
 }
 
 // --- Connect flow state (CSRF protection) -------------------------------------------------
@@ -111,7 +117,7 @@ export function createStateVerifier({ now = () => Date.now() } = {}) {
 export function buildConnectUrl(config, state) {
   const query = new URLSearchParams({
     response_type: "none",
-    application_id: config.clientId,
+    application_id: config.applicationId,
     redirect_uri: config.redirectUri,
     mode: "live",
     state,

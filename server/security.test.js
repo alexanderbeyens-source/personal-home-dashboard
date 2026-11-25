@@ -112,6 +112,7 @@ describe("protected API routes", () => {
       SMARTCAR_CLIENT_ID: "",
       SMARTCAR_CLIENT_SECRET: "",
       SMARTCAR_REDIRECT_URI: "",
+      SMARTCAR_APPLICATION_ID: "",
       HOME_ASSISTANT_TOKEN: "",
     });
     child = server.child;
