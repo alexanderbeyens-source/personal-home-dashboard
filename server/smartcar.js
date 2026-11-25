@@ -48,8 +48,12 @@ export function smartcarConfigFromEnv(env) {
   const clientSecret = env.SMARTCAR_CLIENT_SECRET?.trim();
   const redirectUri = env.SMARTCAR_REDIRECT_URI?.trim();
   if (!clientId || !clientSecret || !redirectUri) return null;
-  if (!/^[A-Za-z0-9-]{8,100}$/.test(clientId) || clientSecret.length < 8 || clientSecret.length > 500) {
-    throw configError("De Smartcar-koppeling is ongeldig ingesteld.", "invalid-credentials");
+  // Smartcar client IDs come in several forms (a UUID, or "client_" plus letters and digits).
+  if (!/^[A-Za-z0-9_.-]{8,100}$/.test(clientId)) {
+    throw configError("De Smartcar-client-ID is ongeldig ingesteld: alleen letters, cijfers, _, . en - (zonder aanhalingstekens of spaties).", "invalid-client-id");
+  }
+  if (clientSecret.length < 8 || clientSecret.length > 500 || /\s|^["']|["']$/.test(clientSecret)) {
+    throw configError("Het Smartcar-client secret is ongeldig ingesteld: controleer op aanhalingstekens of spaties.", "invalid-secret");
   }
   // The redirect must come back to this Northstar instance, so its origin must equal AUTH_URL.
   let redirect;

@@ -71,6 +71,21 @@ describe("smartcarConfigFromEnv", () => {
     expect(smartcarConfigFromEnv(env)).toEqual(config);
   });
 
+  it("accepts client IDs with underscores and reports which credential is malformed", () => {
+    expect(smartcarConfigFromEnv({ ...env, SMARTCAR_CLIENT_ID: "client_01M89G2A1D2Z9FCBPTT3GN64J4" })?.clientId).toBe("client_01M89G2A1D2Z9FCBPTT3GN64J4");
+    const reason = (overrides) => {
+      try {
+        smartcarConfigFromEnv({ ...env, ...overrides });
+      } catch (error) {
+        return error.reason;
+      }
+      return null;
+    };
+    expect(reason({ SMARTCAR_CLIENT_ID: '"client_01M89G2A1D2Z9FCBPTT3GN64J4"' })).toBe("invalid-client-id");
+    expect(reason({ SMARTCAR_CLIENT_SECRET: '"quoted-secret-value"' })).toBe("invalid-secret");
+    expect(reason({ SMARTCAR_CLIENT_SECRET: "has a space inside" })).toBe("invalid-secret");
+  });
+
   it("rejects a redirect URI that does not point back to this Northstar callback, without leaking values", () => {
     for (const redirect of ["https://evil.example/api/smartcar/callback", "https://northstar.example/other", "http://northstar.example/api/smartcar/callback"]) {
       let error;
