@@ -16,6 +16,7 @@ import { createImieHistoryService } from "./imie-history.js";
 import { calendarsFromEnv, createCalendarService, isCalendarConfigured } from "./calendar.js";
 import { logFetchFailure, upstreamError } from "./fetch-errors.js";
 import { createSportsService } from "./sports.js";
+import { buildConnectUrl, createConnectState, createSmartcarService, createStateVerifier, smartcarConfigFromEnv } from "./smartcar.js";
 import { isAllowedOrigin, verifyCsrfToken } from "./csrf.js";
 import { createTasksService, newTaskLine, tasksConfigFromEnv } from "./tasks.js";
 import { WEATHER_CURRENT, WEATHER_DAILY, WEATHER_HOURLY, mapForecast } from "./weather.js";
@@ -443,6 +444,33 @@ const duolingoService = createDuolingoService({
   },
 });
 
+// Smartcar (Mercedes-Benz partner) vehicle API. The client secret and access tokens are only
+// sent to Smartcar's own hosts and never logged or returned; error bodies are parsed for their
+// fixed error codes only.
+async function smartcarRequest({ method, url, headers, body }) {
+  const response = await fetch(url, {
+    method,
+    body,
+    signal: AbortSignal.timeout(12000),
+    redirect: "error",
+    headers: { accept: "application/json", "user-agent": "NorthstarHomeDashboard/0.1", ...headers },
+  });
+  const text = await readLimitedBody(response, 256 * 1024);
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = null;
+  }
+  return { status: response.status, json, retryAfter: response.headers.get("retry-after") };
+}
+
+const smartcarService = createSmartcarService({
+  request: smartcarRequest,
+  onError: (error) => logFetchFailure("Smartcar", "smartcar", error),
+});
+const verifySmartcarState = createStateVerifier();
+
 function requireConfig(keys) {
   const missing = keys.filter((key) => !process.env[key]);
   if (missing.length) {
@@ -683,6 +711,12 @@ async function routeApiUncached(url) {
     const config = duolingoConfigFromEnv(process.env);
     if (!config) requireConfig(["DUOLINGO_USERNAME"]);
     return duolingoService.get({ username: config.username, refresh: url.searchParams.get("refresh") === "1" });
+  }
+
+  if (url.pathname === "/api/vehicle") {
+    const config = smartcarConfigFromEnv(process.env);
+    if (!config) requireConfig(["SMARTCAR_CLIENT_ID", "SMARTCAR_CLIENT_SECRET", "SMARTCAR_REDIRECT_URI"]);
+    return smartcarService.get({ config, refresh: url.searchParams.get("refresh") === "1" });
   }
 
   if (url.pathname === "/api/health") {
@@ -960,6 +994,68 @@ async function handleTaskAdd(request, response, url) {
   }
 }
 
+function redirect(response, location) {
+  response.writeHead(302, { location, "cache-control": "no-store", "referrer-policy": "no-referrer" });
+  response.end();
+}
+
+// GET routes that answer with a redirect instead of JSON (the Smartcar Connect flow). They get
+// the same protection as the other API routes: configured auth, rate limit and the
+// allow-listed GitHub session. Returns true when the request may continue.
+async function allowSessionRedirect(request, response) {
+  if (request.method !== "GET") {
+    response.setHeader("allow", "GET");
+    sendJson(response, 405, { error: "Method not allowed." });
+    return false;
+  }
+  if (!authConfig) {
+    sendJson(response, 503, { error: "Aanmelden is niet geconfigureerd op deze server." });
+    return false;
+  }
+  if (isRateLimited(request, "smartcar", 20, 60_000)) {
+    sendRateLimitResponse(response);
+    return false;
+  }
+  let user;
+  try {
+    user = await getAuthenticatedUser(request);
+  } catch (error) {
+    console.error("Session validation failed:", error.name);
+    sendJson(response, 503, { error: "Authenticatie is tijdelijk niet beschikbaar." });
+    return false;
+  }
+  if (!user) {
+    sendJson(response, 401, { error: "Aanmelden vereist." });
+    return false;
+  }
+  return true;
+}
+
+// Starts Smartcar Connect (read-only, response_type=none: v3 needs no code exchange).
+async function handleSmartcarConnect(request, response) {
+  if (!(await allowSessionRedirect(request, response))) return;
+  let config = null;
+  try {
+    config = smartcarConfigFromEnv(process.env);
+  } catch (error) {
+    logFetchFailure("API request", "/api/smartcar/connect", error);
+  }
+  if (!config) return redirect(response, "/?auto=config");
+  return redirect(response, buildConnectUrl(config, createConnectState(process.env.AUTH_SECRET)));
+}
+
+// Smartcar redirects back here after Connect. Nothing has to be stored: the connection is kept
+// by Smartcar and looked up again on the next /api/vehicle request. Query values are never logged.
+async function handleSmartcarCallback(request, response, url) {
+  if (!(await allowSessionRedirect(request, response))) return;
+  if (!verifySmartcarState(url.searchParams.get("state"), process.env.AUTH_SECRET)) {
+    return redirect(response, "/?auto=ongeldig");
+  }
+  if (url.searchParams.has("error")) return redirect(response, "/?auto=geannuleerd");
+  smartcarService.invalidate();
+  return redirect(response, "/?auto=gekoppeld");
+}
+
 async function handleRequest(request, response) {
   applySecurityHeaders(response);
   let url;
@@ -979,6 +1075,14 @@ async function handleRequest(request, response) {
 
   if (url.pathname === "/api/auth" || url.pathname.startsWith("/api/auth/")) {
     return handleAuthRequest(request, response, url);
+  }
+
+  if (url.pathname === "/api/smartcar/connect") {
+    return handleSmartcarConnect(request, response);
+  }
+
+  if (url.pathname === "/api/smartcar/callback") {
+    return handleSmartcarCallback(request, response, url);
   }
 
   if (url.pathname === "/api/tasks/toggle") {

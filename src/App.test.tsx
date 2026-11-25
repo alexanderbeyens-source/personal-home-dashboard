@@ -488,6 +488,87 @@ describe("Duolingo widget", () => {
   });
 });
 
+describe("Vehicle widget", () => {
+  beforeEach(() => window.history.replaceState(null, "", "/"));
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  const vehicle = (overrides: Record<string, unknown> = {}) => ({
+    state: "connected",
+    vehicle: { make: "MERCEDES-BENZ", model: "CLA 250+", year: 2026 },
+    batteryPercent: 76,
+    rangeKm: 313,
+    isCharging: false,
+    cableConnected: true,
+    reportedAt: "2026-11-25T09:59:00Z",
+    retrievedAt: "2026-11-25T10:00:00Z",
+    stale: false,
+    unavailableReason: null,
+    updatedAt: "2026-11-25T10:00:00Z",
+    ...overrides,
+  });
+  const panel = async () => (await screen.findByRole("heading", { name: "Auto" })).closest("section") as HTMLElement;
+
+  it("shows battery, range, charging state and when the car reported it", async () => {
+    mockApi({ "/api/vehicle": () => jsonResponse(vehicle()) });
+    render(<App />);
+    const card = await panel();
+    expect(await within(card).findByText("76")).toBeTruthy();
+    expect(within(card).getByText("313")).toBeTruthy();
+    expect(within(card).getByText("Kabel aangesloten, laadt niet")).toBeTruthy();
+    expect(within(card).getByText(/Gemeld door de auto:/)).toBeTruthy();
+    expect(within(card).getByText("Mercedes-Benz CLA 250+")).toBeTruthy();
+  });
+
+  it("never shows missing values as zero", async () => {
+    mockApi({ "/api/vehicle": () => jsonResponse(vehicle({ batteryPercent: null, rangeKm: null, isCharging: null, cableConnected: null, reportedAt: null })) });
+    render(<App />);
+    const card = await panel();
+    expect(await within(card).findByText("Batterij niet beschikbaar")).toBeTruthy();
+    expect(within(card).getAllByText("Niet beschikbaar")).toHaveLength(2);
+    expect(within(card).queryByText("0")).toBeNull();
+  });
+
+  it("labels stale data with the reason and the time of the last valid value", async () => {
+    mockApi({ "/api/vehicle": () => jsonResponse(vehicle({ stale: true, unavailableReason: "vehicle-offline" })) });
+    render(<App />);
+    const card = await panel();
+    expect(await within(card).findByText(/Data tijdelijk niet beschikbaar \(de auto slaapt of heeft geen bereik\) · laatste geldige waarde van/)).toBeTruthy();
+  });
+
+  it("offers the connect button when not connected and a reauthorize button when needed", async () => {
+    mockApi({ "/api/vehicle": () => jsonResponse({ state: "not_connected", vehicle: null, stale: false, unavailableReason: null, updatedAt: "2026-11-25T10:00:00Z" }) });
+    render(<App />);
+    let card = await panel();
+    expect((await within(card).findByRole("link", { name: "Auto koppelen" })).getAttribute("href")).toBe("/api/smartcar/connect");
+    cleanup();
+
+    mockApi({ "/api/vehicle": () => jsonResponse({ state: "reauth_required", vehicle: null, stale: false, unavailableReason: null, updatedAt: "2026-11-25T10:00:00Z" }) });
+    render(<App />);
+    card = await panel();
+    expect((await within(card).findByRole("link", { name: "Opnieuw autoriseren" })).getAttribute("href")).toBe("/api/smartcar/connect");
+    expect(within(card).getByText(/Opnieuw autoriseren nodig/)).toBeTruthy();
+  });
+
+  it("shows the result of the Connect flow once and removes it from the address bar", async () => {
+    window.history.replaceState(null, "", "/?auto=gekoppeld");
+    mockApi({ "/api/vehicle": () => jsonResponse(vehicle()) });
+    render(<App />);
+    const card = await panel();
+    expect(await within(card).findByText(/Je auto is gekoppeld/)).toBeTruthy();
+    expect(window.location.search).toBe("");
+  });
+
+  it("stays hidden until Smartcar is configured on the server", async () => {
+    mockApi({ "/api/vehicle": () => jsonResponse(notConfigured, 503) });
+    render(<App />);
+    await screen.findByRole("heading", { name: "Agenda" });
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Auto" })).toBeNull());
+  });
+});
+
 describe("Agenda configuration errors", () => {
   beforeEach(() => window.history.replaceState(null, "", "/"));
   afterEach(() => {

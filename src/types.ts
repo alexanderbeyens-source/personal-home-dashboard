@@ -503,3 +503,27 @@ export interface DuolingoData {
   updatedAt: string;
   profileUrl: string;
 }
+
+export interface VehicleInfo {
+  make: string | null;
+  model: string | null;
+  year: number | null;
+}
+
+/** /api/vehicle: read-only Mercedes-Benz data via Smartcar. Values are null when the car or plan does not provide them. */
+export interface VehicleData {
+  state: "connected" | "not_connected" | "reauth_required";
+  vehicle: VehicleInfo | null;
+  batteryPercent?: number | null;
+  rangeKm?: number | null;
+  isCharging?: boolean | null;
+  cableConnected?: boolean | null;
+  /** When the car itself last reported these values (Smartcar oemUpdatedAt). */
+  reportedAt?: string | null;
+  retrievedAt?: string | null;
+  /** True when the last good value is shown because the newest request failed. */
+  stale: boolean;
+  unavailableReason: "vehicle-offline" | "rate-limited" | "plan-limit" | "no-signals" | "upstream" | null;
+  /** Time of the last successful request to Smartcar. */
+  updatedAt: string;
+}

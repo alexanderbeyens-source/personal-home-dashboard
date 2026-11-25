@@ -7,6 +7,7 @@ import { DuolingoPanel } from "../components/DuolingoPanel";
 import { HealthPanel } from "../components/HealthPanel";
 import { Icon } from "../components/Icon";
 import { TasksPanel } from "../components/TasksPanel";
+import { VehiclePanel } from "../components/VehiclePanel";
 import { ImieChart } from "../components/ImieChart";
 import { Panel, ResourceState, SectionTitle } from "../components/Panel";
 import { FixtureList, LeagueTabs, PlayerLines, StandingsTable, isLeagueId, leagueLabel } from "../components/sports";
@@ -303,6 +304,7 @@ export function Dashboard(props: PageProps) {
         <div className="dash-column dash-side">
           <WeatherPanel />
           <AgendaPanel />
+          <VehiclePanel />
           <TasksPanel csrfToken={props.csrfToken} />
           <HealthPanel />
           <DuolingoPanel />

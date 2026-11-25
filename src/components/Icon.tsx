@@ -22,7 +22,8 @@ export type IconName =
   | "trend"
   | "check"
   | "heart"
-  | "flame";
+  | "flame"
+  | "car";
 
 const paths: Record<IconName, React.ReactNode> = {
   sun: (
@@ -38,6 +39,7 @@ const paths: Record<IconName, React.ReactNode> = {
   chart: <path d="M4 19V5m0 14h16M8 15l3-4 3 2 5-7" />,
   heart: <path d="M12 20s-7.5-4.6-9.2-9.4C1.6 7.2 3.8 4 7.2 4c2 0 3.5 1.1 4.8 2.8C13.3 5.1 14.8 4 16.8 4c3.4 0 5.6 3.2 4.4 6.6C19.5 15.4 12 20 12 20Z" />,
   flame: <path d="M12 21c-3.9 0-7-2.8-7-6.6 0-2.9 1.8-5 3.4-6.9.3 1.6 1.2 2.8 2.4 3.4C10.6 7.5 12 4.6 14.5 3c-.3 2.6.9 4.4 2.3 6.1 1.3 1.6 2.2 3.2 2.2 5.3C19 18.2 15.9 21 12 21Z" />,
+  car: <><path d="M5 16.5h14M3.5 16.5V12l2.2-5a2 2 0 0 1 1.8-1.2h9a2 2 0 0 1 1.8 1.2l2.2 5v4.5a1 1 0 0 1-1 1h-1.5a1 1 0 0 1-1-1V16h-10v.5a1 1 0 0 1-1 1H4.5a1 1 0 0 1-1-1ZM3.5 12h17" /><path d="M7.5 14h.01M16.5 14h.01" /></>,
   check: <path d="M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18V6A1.5 1.5 0 0 1 5 4.5Zm3 7.5 3 3 5-6" />,
   home: <path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z" />,
   grid: <><rect x="3" y="3" width="8" height="8" rx="2" /><rect x="13" y="3" width="8" height="5" rx="2" /><rect x="13" y="10" width="8" height="11" rx="2" /><rect x="3" y="13" width="8" height="8" rx="2" /></>,

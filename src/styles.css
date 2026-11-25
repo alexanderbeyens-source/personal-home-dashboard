@@ -752,6 +752,17 @@ button, select { font: inherit; color: inherit; }
 .task-empty { font-size: 14px; color: var(--muted); padding: 6px 0; }
 .task-error { margin-bottom: 12px; font-size: 14px; color: var(--warning); }
 
+/* ---------- Vehicle ---------- */
+.vehicle-notice { margin-bottom: 12px; font-size: 14px; color: var(--text-soft); }
+.vehicle-battery .metric-value { font-size: 40px; }
+.vehicle-bar { height: 8px; margin-top: 8px; border-radius: 4px; background: var(--raised); overflow: hidden; }
+.vehicle-bar span { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.vehicle-charge { font-size: 15px; font-weight: 600; color: var(--text-soft); }
+.vehicle-charge.is-charging { color: var(--accent); }
+.vehicle-meta { margin-top: 12px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.vehicle-action { margin-top: 12px; width: 100%; }
+@media (min-width: 700px) { .vehicle-action { width: auto; } }
+
 /* ---------- Health ---------- */
 .duo-status { font-size: 14px; font-weight: 600; color: var(--text-soft); }
 .duo-status.is-pending { color: var(--accent); }

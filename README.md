@@ -38,7 +38,7 @@ Before the first deploy:
 
 1. Create a GitHub OAuth App with callback URL `https://YOUR-SERVICE.onrender.com/api/auth/callback/github`.
 2. In Render's service environment settings, set `AUTH_URL` to `https://YOUR-SERVICE.onrender.com`, and supply `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET`, and your numeric `ALLOWED_GITHUB_ID`. Render generates `AUTH_SECRET` from the Blueprint.
-3. Optionally set `WEATHER_LAT`, `WEATHER_LON`, and `WEATHER_LOCATION`; `CALENDAR_ICS_URL`, `HOME_ASSISTANT_URL`, `HOME_ASSISTANT_TOKEN`, and `PROJECTS_JSON` are only needed for those integrations. Keep secrets and private URLs in Render's environment settings, never in the repository.
+3. Optionally set `WEATHER_LAT`, `WEATHER_LON`, and `WEATHER_LOCATION`; `CALENDAR_ICS_URL`, `HOME_ASSISTANT_URL`, `HOME_ASSISTANT_TOKEN`, `PROJECTS_JSON` and the `SMARTCAR_*` variables are only needed for those integrations. Keep secrets and private URLs in Render's environment settings, never in the repository.
 
 The app uses no database or persistent filesystem storage. Render Free services sleep after 15 minutes without traffic and take about a minute to wake. Home Assistant must be reachable from Render; a LAN-only instance will not work, and should not be exposed directly just to connect it.
 
@@ -92,20 +92,40 @@ Duolingo has no official public API. Northstar reads the streak and XP from the 
 - Setup: make sure the Duolingo profile is public and set `DUOLINGO_USERNAME` in Render. Only the username is sent to duolingo.com; nothing reaches the browser except the mapped values and a link to the profile.
 - Caveat: because the endpoint is unofficial it can change, be rate limited or blocked without notice. Northstar then shows an error or stale state; remove `DUOLINGO_USERNAME` to hide the data.
 
+## Vehicle (Mercedes-Benz via Smartcar, read-only)
+
+The dashboard card **Auto** shows the battery percentage, range, whether the car is charging or the cable is connected, when the car last reported these values and when Northstar last fetched them. It uses [Smartcar](https://smartcar.com), an official partner of Mercedes-Benz Connectivity Services, on the Smartcar Free plan (1 vehicle, $0). Only signals are read; no commands (charging, locks, location) are requested or sent.
+
+- API: Smartcar Vehicles API **v3** (v2.0 is deprecated on 1 December 2026). The server requests an application token with the client credentials (valid 1 hour, no refresh token) and finds the connected vehicle via `GET /v3/connections`. The connection itself is stored by Smartcar, so nothing has to be stored by Northstar and a Render restart or sleep does not lose the link. The client secret and tokens stay on the server and are never logged or sent to the browser.
+- Data: `tractionbattery-stateofcharge`, `tractionbattery-range`, `charge-ischarging` and `charge-ischargingcableconnected`, read with one list call (single-signal calls only if battery or range are missing). Missing values are shown as "niet beschikbaar", never as 0.
+- Fetching: only when the dashboard is opened, with a 60-minute in-memory cache; the refresh button fetches again at most once per 5 minutes. No background polling and no webhooks. On a failure (car asleep or unreachable, rate limit, plan limit) the last valid value is shown as stale with its time; without an earlier value the card shows that the data is temporarily unavailable, and Northstar waits at least 5 minutes (or Smartcar's `retry-after`) before trying again. After a Render restart the last valid value is gone until the next successful fetch.
+- States: "niet gekoppeld" (with a **Auto koppelen** button), "opnieuw autoriseren nodig" (connection `DEGRADED`/`DISABLED` or a `REAUTHENTICATE` error) and "data tijdelijk niet beschikbaar". The card stays hidden until the three variables are set.
+- Connect flow: `/api/smartcar/connect` redirects to Smartcar Connect (`response_type=none`, `mode=live`, no code exchange) with a signed, single-use `state` (15 minutes). `/api/smartcar/callback` checks that state and redirects back to the dashboard. Both, and `/api/vehicle`, require the allow-listed GitHub session.
+
+Setup (once):
+
+1. In the Smartcar dashboard, under **Vehicle Access**, select only state of charge, range, charging status and charging cable connected. Do not select location or any command.
+2. Under **API Credentials**, create a client secret (shown once) and copy the client ID and secret directly into Render.
+3. Add the redirect URI `https://YOUR-SERVICE.onrender.com/api/smartcar/callback` (the same address as `AUTH_URL`).
+4. In Render, set `SMARTCAR_CLIENT_ID`, `SMARTCAR_CLIENT_SECRET` and `SMARTCAR_REDIRECT_URI` (the URI from step 3). The server rejects a redirect URI that does not point to `/api/smartcar/callback` on `AUTH_URL`.
+5. Open the dashboard, tap **Auto koppelen**, sign in with the Mercedes me account and approve. Mercedes me connect services must be active.
+
+The Connect URL uses the client ID as `application_id`; Smartcar's documentation shows the same value for both. If the Smartcar dashboard shows a different Application ID, the Connect step fails and an extra variable is needed.
+
 ## Mobility & Home · Phase 3 assessment (revised 25 November 2026)
 
-This section records an integration-availability assessment only. Per the functional analysis (section 4 and 13.6), Mobility & Home is not part of the user interface: the former `/mobility` page has been removed and no device data is contacted or simulated. No device adapter or credential variable has been added. This revision supersedes the assessment of 23 November 2026, which was outdated on two points: an official partner route now exists for Mercedes-Benz EVs in Europe, and the Dreame L50s Pro Ultra is Matter-certified.
+This section records the integration-availability assessment. The Mercedes-Benz route has since been implemented as the read-only **Auto** card (see above and functional analysis section 13.7, decision of 25 November 2026). The Dreame robot remains outside the user interface: the former `/mobility` page stays removed and no Dreame data is contacted or simulated. This revision supersedes the assessment of 23 November 2026, which was outdated on two points: an official partner route now exists for Mercedes-Benz EVs in Europe, and the Dreame L50s Pro Ultra is Matter-certified.
 
 | Area | Mercedes-Benz CLA 250+ (2026, Europe) | Dreame L50s Pro Ultra |
 | --- | --- | --- |
-| Feasibility status | Feasible via official partner route; pending account-level verification of Free-plan signals | Feasible only with a local controller at home; no supported €0 cloud-only route |
+| Feasibility status | **Implemented** (read-only, Smartcar Vehicles API v3) after the owner confirmed VIN compatibility and that state of charge and range are in the Free plan | Feasible only with a local controller at home; no supported €0 cloud-only route |
 | Candidate route | Smartcar, official partner of Mercedes-Benz Connectivity Services (announced September 2025, available in Europe since 15 December 2025). Supports BEV and PHEV for new connections in, among others, Belgium and the Netherlands. | Matter (certified: CSA252E1MAT45619-24, 21 May 2025, Matter 1.4, family variant SKU "L50s Pro Ultra R2508"). Matter is local-network only, so Northstar on Render needs a home controller with its own API (Home Assistant, Homey Pro or SmartThings). |
 | Data exposed | Charge (cable connected, charging status, timers, limit, time to complete, wattage), traction battery (state of charge, range, nominal capacity), precise location, odometer. Free plan has "limited vehicle signals"; exact coverage must be verified in the Smartcar dashboard. | Via Matter: operational state, run mode, clean mode, service area (rooms). Battery level, consumables and cleaning history are not confirmed via Matter; these are only available through the community cloud integration. |
 | Authentication and user actions | Smartcar developer account (free); OAuth consent with Mercedes me account; VIN entry required by Mercedes during connection. Mercedes me connect services must be active; whether a paid subscription is required was not documented. | Matter pairing code from the Dreamehome app (Device settings → Smart Home Integration → Matter), paired with a Matter controller. Controller exposes data via its own API/token. |
 | Cost | Smartcar Free: $0, 1 real vehicle, no credit card. Smartcar Build: from $1.99 per vehicle per application per month (only if Free-plan signals are insufficient). | Home Assistant Green €179 one-off, remote access via free Cloudflare Tunnel or Home Assistant Cloud from $6.50/month; Homey Pro mini €279 one-off; SmartThings €0 if a compatible Samsung TV/hub is already present. |
-| Render Free fit and limitations | Fetch on dashboard open with short in-memory cache; no webhooks (missed while the service sleeps). Open issue: OAuth refresh-token storage, because in-memory state is lost on sleep/restart. | Northstar would read from the home controller over HTTPS. SmartThings tokens expire after ~24 hours and need refresh-token persistence, same storage issue. |
+| Render Free fit and limitations | Fetch on dashboard open with a 60-minute in-memory cache; no webhooks (missed while the service sleeps). The refresh-token storage issue is resolved by v3: application tokens (client credentials, 1 hour) are requested again after a restart and the connection is stored by Smartcar. | Northstar would read from the home controller over HTTPS. SmartThings tokens expire after ~24 hours and need refresh-token persistence, same storage issue. |
 | Rejected alternatives | Mercedes developer portal direct: connected-vehicle API pricing is "contact sales"; BYOCAR is a test option, not a permanent personal-use plan. High Mobility: monthly per-vehicle fee and B2B application review. mbapi2020 (Home Assistant community): supports CLA 2025+, but has had login-flow changes (passkeys), an SSL error since 23 July 2026, and a maintainer handover. | Direct Dreame cloud from Node: undocumented protocol, password stored on Render, breaks on cloud changes. Valetudo: model not found on the supported-robots list; rooting voids warranty. Apple Home: no public API. |
-| Decision | Candidate for implementation after the owner (1) creates a Smartcar account, (2) confirms VIN compatibility and (3) confirms SoC and range are included in the Free plan. Refresh-token storage approach must be approved before implementation. | Not implemented. Reassess only if the owner approves a one-off hardware purchase (Home Assistant Green recommended, as it can also host Mercedes integration) and revises the out-of-scope rule for Home Assistant. |
+| Decision | Implemented on 25 November 2026 with the owner's approval (option A: v3 application tokens, Free plan only, no extra storage or service). | Not implemented. Reassess only if the owner approves a one-off hardware purchase (Home Assistant Green recommended, as it can also host Mercedes integration) and revises the out-of-scope rule for Home Assistant. |
 
 Research references, checked 25 November 2026:
 
@@ -119,6 +139,9 @@ Research references, checked 25 November 2026:
 - [Home Assistant Green pricing](https://www.nabucasa.com/news/2026-01-08-green-pricing-change/)
 - [Homey Pro mini](https://homey.app/en-nl/homey-pro-mini/)
 - [SmartThings token lifetime](https://developer.smartthings.com/docs/getting-started/authorization-and-permissions)
+- [Smartcar v3 application token (client credentials, 1 hour, no refresh token)](https://smartcar.com/docs/api-reference/authorization/request-access-token)
+- [Smartcar Connect (`response_type=none`) and its response](https://smartcar.com/docs/connect/redirect-to-connect)
+- [Smartcar connections, signals and rate limits](https://smartcar.com/docs/api-reference/list-connections), [signals](https://smartcar.com/docs/api-reference/list-signals), [API limits](https://smartcar.com/docs/help/api-limits)
 
 Keep `.env` private and never commit real calendar URLs, Home Assistant tokens, or other credentials.
 
