@@ -20,7 +20,10 @@ async function reservePort() {
 }
 
 async function startServer(extraEnv = {}) {
-  const port = await reservePort();
+  return startServerOnPort(await reservePort(), extraEnv);
+}
+
+async function startServerOnPort(port, extraEnv = {}) {
   const child = spawn(process.execPath, ["server/index.js"], {
     cwd: process.cwd(),
     env: {
@@ -78,6 +81,9 @@ describe("protected API routes", () => {
       "/api/sports/nba/players",
       "/api/sports/belgian-football",
       "/api/news?view=briefing",
+      "/api/vehicle",
+      "/api/smartcar/connect",
+      "/api/smartcar/callback?state=x&user_id=y",
     ]) {
       const response = await fetch(`${baseUrl}${route}`);
       expect(response.status).toBe(401);
@@ -103,6 +109,9 @@ describe("protected API routes", () => {
       INTERVALS_ATHLETE_ID: "",
       INTERVALS_API_KEY: "",
       DUOLINGO_USERNAME: "",
+      SMARTCAR_CLIENT_ID: "",
+      SMARTCAR_CLIENT_SECRET: "",
+      SMARTCAR_REDIRECT_URI: "",
       HOME_ASSISTANT_TOKEN: "",
     });
     child = server.child;
@@ -113,7 +122,7 @@ describe("protected API routes", () => {
     });
     const headers = { cookie: `${sessionCookieName}=${sessionToken}` };
 
-    for (const route of ["/api/calendar", "/api/home-assistant", "/api/tasks", "/api/health", "/api/duolingo"]) {
+    for (const route of ["/api/calendar", "/api/home-assistant", "/api/tasks", "/api/health", "/api/duolingo", "/api/vehicle"]) {
       const response = await fetch(`${server.baseUrl}${route}`, { headers });
       expect(response.status).toBe(503);
       const body = await response.json();
@@ -121,11 +130,55 @@ describe("protected API routes", () => {
         error: "Deze koppeling is niet geconfigureerd op de server.",
         code: "not_configured",
       });
-      expect(JSON.stringify(body)).not.toMatch(/CALENDAR_ICS_URL|HOME_ASSISTANT|GITHUB_TASKS|INTERVALS|DUOLINGO/);
+      expect(JSON.stringify(body)).not.toMatch(/CALENDAR_ICS_URL|HOME_ASSISTANT|GITHUB_TASKS|INTERVALS|DUOLINGO|SMARTCAR/);
     }
 
     const unknown = await fetch(`${server.baseUrl}/api/unknown-route`, { headers });
     expect(unknown.status).toBe(404);
+
+    // Without Smartcar settings the Connect button leads back to the dashboard, not to Smartcar.
+    const connect = await fetch(`${server.baseUrl}/api/smartcar/connect`, { headers, redirect: "manual" });
+    expect(connect.status).toBe(302);
+    expect(connect.headers.get("location")).toBe("/?auto=config");
+  });
+
+  it("starts Smartcar Connect only for the signed-in owner and checks the callback state", async () => {
+    // The redirect URI must point at this server's own callback (same origin as AUTH_URL).
+    const port = await reservePort();
+    const server = await startServerOnPort(port, {
+      SMARTCAR_CLIENT_ID: "8229df9f-91a0-4ff0-a1ae-a1f38ee24d07",
+      SMARTCAR_CLIENT_SECRET: "dummy-smartcar-secret-value",
+      SMARTCAR_REDIRECT_URI: `http://127.0.0.1:${port}/api/smartcar/callback`,
+    });
+    child = server.child;
+    const sessionToken = await encode({
+      token: { githubUserId: allowedGithubId },
+      secret: authSecret,
+      salt: sessionCookieName,
+    });
+    const headers = { cookie: `${sessionCookieName}=${sessionToken}` };
+
+    const connect = await fetch(`${server.baseUrl}/api/smartcar/connect`, { headers, redirect: "manual" });
+    expect(connect.status).toBe(302);
+    const location = new URL(connect.headers.get("location"));
+    expect(location.origin).toBe("https://connect.smartcar.com");
+    expect(location.searchParams.get("response_type")).toBe("none");
+    expect(location.href).not.toContain("dummy-smartcar-secret-value");
+    const state = location.searchParams.get("state");
+
+    const forged = await fetch(`${server.baseUrl}/api/smartcar/callback?state=forged&user_id=u`, { headers, redirect: "manual" });
+    expect(forged.headers.get("location")).toBe("/?auto=ongeldig");
+
+    const callback = await fetch(`${server.baseUrl}/api/smartcar/callback?state=${encodeURIComponent(state)}&user_id=u`, { headers, redirect: "manual" });
+    expect(callback.status).toBe(302);
+    expect(callback.headers.get("location")).toBe("/?auto=gekoppeld");
+
+    const replay = await fetch(`${server.baseUrl}/api/smartcar/callback?state=${encodeURIComponent(state)}&user_id=u`, { headers, redirect: "manual" });
+    expect(replay.headers.get("location")).toBe("/?auto=ongeldig");
+
+    const post = await fetch(`${server.baseUrl}/api/smartcar/connect`, { method: "POST", headers });
+    expect(post.status).toBe(405);
+    expect(child.logs).not.toContain("dummy-smartcar-secret-value");
   });
 
   it("protects the task write route with origin, session, CSRF token and size checks", async () => {

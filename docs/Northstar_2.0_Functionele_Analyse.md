@@ -216,11 +216,14 @@ De gewenste hoofdonderdelen zijn:
 6.  **Agenda** --- persoonlijke agenda, indien een ICS-bron
     geconfigureerd is.
 7.  **Weather** --- weersinformatie voor de ingestelde locatie.
+8.  **Auto** --- één alleen-lezen kaart op Home met batterij, actieradius
+    en laadstatus van de Mercedes-Benz CLA 250+ via Smartcar (besluit
+    gebruiker 2026-11-25, zie 13.7 en 14.2).
 
-**Mobility & Home is voorlopig niet opnemen in de gebruikersinterface.**
-De haalbaarheidsanalyse voor Mercedes en Dreame is uitgevoerd, maar er
-is geen voldoende betrouwbare en eenvoudige rechtstreekse integratie
-vastgesteld. Renson is expliciet geschrapt. Zie hoofdstuk 15.
+**Mobility & Home blijft verder buiten de gebruikersinterface.** Alleen
+de Auto-kaart is toegevoegd; er komt geen aparte Mobility &
+Home-pagina. Dreame wordt niet geïntegreerd en Renson is expliciet
+geschrapt. Zie hoofdstuk 14 en 15.
 
 Inspecteer eerst de bestaande navigatie en interface. Behoud werkende
 patronen en introduceer geen onnodige herstructurering.
@@ -785,6 +788,10 @@ Deze maatregelen moeten behouden blijven.
 -   Secrets niet in frontendbundles plaatsen.
 -   Secrets niet in logs of foutmeldingen opnemen.
 -   Documenteer variabelen zonder hun waarden te publiceren.
+-   Smartcar: `SMARTCAR_CLIENT_ID`, `SMARTCAR_CLIENT_SECRET` en
+    `SMARTCAR_REDIRECT_URI` staan alleen in Render. Het client secret en
+    de Smartcar-tokens blijven server-side en komen niet in logs,
+    foutmeldingen of de frontend.
 -   Controleer `.gitignore` en Git history op onbedoeld toegevoegde
     secrets.
 
@@ -915,6 +922,41 @@ gerealiseerde integratie.** De technische bevindingen mogen in
 documentatie blijven staan. De frontend mag geen lege of
 niet-functionele toestelkaarten bevatten.
 
+Bijgewerkt 2026-11-25: voor Mercedes is een officiële partnerroute
+(Smartcar) gevonden en gerealiseerd; zie 13.7. Voor Dreame blijft
+bovenstaande conclusie gelden.
+
+## 13.7 Phase 3B --- Mercedes via Smartcar (alleen lezen)
+
+Besluit gebruiker 2026-11-25: de Mercedes-Benz CLA 250+ wordt alleen
+lezend gekoppeld via Smartcar, officiële partner van Mercedes-Benz
+Connectivity Services, op het gratis Smartcar Free-plan. De gebruiker
+bevestigde dat de VIN compatibel is en dat State of Charge en Range in
+het plan zitten.
+
+Gerealiseerd: - Smartcar Vehicles API v3 (v2.0 wordt op 2026-12-01
+uitgefaseerd); - applicatietoken via client credentials (1 uur geldig,
+geen refresh token), dus geen tokenopslag en geen extra dienst nodig
+ondanks het slapen van Render Free; - de koppeling zelf wordt door
+Smartcar bewaard en via `/v3/connections` opgezocht; - alleen signalen
+lezen (batterij, actieradius, laden, kabel aangesloten); geen locatie
+en geen commando's; - ophalen alleen bij openen van het dashboard,
+in-memory cache van 60 minuten (keuze gebruiker: mag minder vaak dan
+5 minuten), vernieuwen hoogstens om de 5 minuten; geen polling op de
+achtergrond en geen webhooks; - statussen "niet gekoppeld" (met
+koppelknop), "opnieuw autoriseren nodig" en "data tijdelijk niet
+beschikbaar" met het tijdstip van de laatste geldige waarde; -
+`/api/vehicle`, `/api/smartcar/connect` en `/api/smartcar/callback`
+zitten achter de GitHub-login; de Connect-flow gebruikt een ondertekende,
+eenmalige `state`; - de kaart is verborgen zolang de
+Smartcar-variabelen niet ingesteld zijn.
+
+Beperkingen: - de laatste geldige waarde staat in het geheugen en is na
+een herstart weg tot de volgende geslaagde ophaling; - de maandlimiet
+van het Free-plan per voertuig is niet gepubliceerd; - de Connect-URL
+gebruikt de client-ID als `application_id` (volgens de voorbeelden in
+de Smartcar-documentatie dezelfde waarde).
+
 ------------------------------------------------------------------------
 
 # 14. Mobility & Home --- scopebesluit
@@ -957,8 +999,11 @@ Mogelijk interessante gegevens: - batterijpercentage; - laadstatus; -
 actieradius; - kilometerstand; - laatste update; - eventueel
 laadvermogen en resterende laadtijd.
 
-Huidige beslissing: niet integreren zolang particuliere toegang,
-compatibiliteit en veilige gratis API-toegang niet bewezen zijn.
+Huidige beslissing (2026-11-25): alleen lezend integreren via Smartcar
+(officiële Mercedes-partner, Free-plan, €0) als één Auto-kaart op Home:
+batterijpercentage, actieradius, laadstatus en laatste update.
+Kilometerstand, laadvermogen en resterende laadtijd worden voorlopig
+niet getoond. Zie 13.7.
 
 ## 14.3 Renson
 

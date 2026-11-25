@@ -51,3 +51,9 @@ services:
         sync: false
       - key: DUOLINGO_USERNAME
         sync: false
+      - key: SMARTCAR_CLIENT_ID
+        sync: false
+      - key: SMARTCAR_CLIENT_SECRET
+        sync: false
+      - key: SMARTCAR_REDIRECT_URI
+        sync: false
