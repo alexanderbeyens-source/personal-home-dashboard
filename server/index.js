@@ -468,6 +468,7 @@ async function smartcarRequest({ method, url, headers, body }) {
 const smartcarService = createSmartcarService({
   request: smartcarRequest,
   onError: (error) => logFetchFailure("Smartcar", "smartcar", error),
+  onDiagnostic: (text) => console.error(`Smartcar diagnostic: ${text}`),
 });
 const verifySmartcarState = createStateVerifier();
 
@@ -893,6 +894,11 @@ function sendApiError(response, pathname, error) {
   const status = error.status ?? 502;
   if (error.code === "not_configured") {
     return sendJson(response, status, { error: error.message, code: "not_configured" });
+  }
+  if (error.code === "vehicle_unavailable") {
+    // Fixed explanation per reason (server/smartcar.js), never upstream text.
+    logFetchFailure("API request", pathname, error);
+    return sendJson(response, status, { error: error.message, code: "vehicle_unavailable" });
   }
   if (error.code === "invalid_config") {
     // Messages of configuration errors are fixed text (plus a calendar number) and never
