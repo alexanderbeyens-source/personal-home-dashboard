@@ -405,6 +405,16 @@ export function createSmartcarService({
       // when nothing usable came back and Smartcar itself points to re-authentication.
       if (reauthErrors.length) {
         const granted = connection.permissions ? connection.permissions.map(word).join(",") || "none" : "unknown";
+        // The connection already holds every permission Connect asks for, yet Smartcar still
+        // refuses the signals (seen with Mercedes-Benz: PERMISSION/UNKNOWN on every signal, even
+        // VIN). A new Connect flow does not change that, so do not send the owner into a loop.
+        // Only for "insufficient permissions" (type PERMISSION): an OEM sign-in failure such as
+        // AUTHENTICATION_FAILED is still fixed by a new Connect flow.
+        const scopeComplete = connection.permissions && CONNECT_SCOPE.every((permission) => connection.permissions.includes(permission));
+        if (scopeComplete && reauthErrors.every((error) => error.type === "PERMISSION")) {
+          onDiagnostic(`access_denied source=signal error=${describeError(reauthErrors[0])} count=${reauthErrors.length} connection=${word(connection.status)} permissions=${granted}`);
+          return { state: "access_denied", vehicle: connection.vehicle };
+        }
         return reauth(connection.vehicle, "signal", `error=${describeError(reauthErrors[0])} count=${reauthErrors.length} connection=${word(connection.status)} permissions=${granted}`);
       }
       const vehicleError = [...signals.values()].map((signal) => signal.error).find(Boolean);

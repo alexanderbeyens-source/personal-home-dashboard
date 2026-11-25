@@ -512,7 +512,8 @@ export interface VehicleInfo {
 
 /** /api/vehicle: read-only Mercedes-Benz data via Smartcar. Values are null when the car or plan does not provide them. */
 export interface VehicleData {
-  state: "connected" | "not_connected" | "reauth_required";
+  /** access_denied: the connection has the right permissions, yet Smartcar/the OEM refuses every signal. */
+  state: "connected" | "not_connected" | "reauth_required" | "access_denied";
   vehicle: VehicleInfo | null;
   batteryPercent?: number | null;
   rangeKm?: number | null;

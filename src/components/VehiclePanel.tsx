@@ -112,6 +112,11 @@ export function VehiclePanel() {
           <p className="empty-state">Opnieuw autoriseren nodig: Smartcar heeft opnieuw toestemming nodig om je auto te lezen.</p>
           <a className="button-primary vehicle-action" href={SMARTCAR_CONNECT_URL}>Opnieuw autoriseren</a>
         </>
+      ) : data?.state === "access_denied" ? (
+        <>
+          <p className="empty-state">Smartcar krijgt geen gegevens van Mercedes. Opnieuw koppelen helpt niet: controleer de toestemming voor gegevensdeling in de Mercedes me-app of vraag het na bij Smartcar.</p>
+          <p className="vehicle-meta">Is de toestemming hersteld? <a href={SMARTCAR_CONNECT_URL}>Opnieuw koppelen</a></p>
+        </>
       ) : resource.notConfigured ? (
         <p className="empty-state">Stel de Smartcar-koppeling in op de server om je auto hier te zien.</p>
       ) : (

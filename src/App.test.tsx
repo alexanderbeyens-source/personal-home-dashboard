@@ -550,6 +550,14 @@ describe("Vehicle widget", () => {
     card = await panel();
     expect((await within(card).findByRole("link", { name: "Opnieuw autoriseren" })).getAttribute("href")).toBe("/api/smartcar/connect");
     expect(within(card).getByText(/Opnieuw autoriseren nodig/)).toBeTruthy();
+    cleanup();
+
+    mockApi({ "/api/vehicle": () => jsonResponse({ state: "access_denied", vehicle: null, stale: false, unavailableReason: null, updatedAt: "2026-11-25T10:00:00Z" }) });
+    render(<App />);
+    card = await panel();
+    expect(await within(card).findByText(/Smartcar krijgt geen gegevens van Mercedes. Opnieuw koppelen helpt niet/)).toBeTruthy();
+    expect(within(card).queryByRole("link", { name: "Opnieuw autoriseren" })).toBeNull();
+    expect(within(card).getByRole("link", { name: "Opnieuw koppelen" }).getAttribute("href")).toBe("/api/smartcar/connect");
   });
 
   it("shows the result of the Connect flow once and removes it from the address bar", async () => {
