@@ -225,19 +225,52 @@ describe("createSmartcarService", () => {
     expect(await service.get({ config })).toMatchObject({ state: "not_connected", vehicle: null, stale: false });
   });
 
-  it("reports reauth_required for a degraded connection or a REAUTHENTICATE error", async () => {
-    const degraded = connection();
-    degraded.attributes = { ...degraded.attributes, status: { name: "DEGRADED" } };
-    const first = createSmartcarService({ request: mockSmartcar(happyRoutes({ "/connections": ok({ data: [degraded] }) })) });
-    expect((await first.get({ config })).state).toBe("reauth_required");
+  it("still reads the signals of a degraded connection and asks to re-authorize only when disabled", async () => {
+    const withStatus = (name) => {
+      const item = connection();
+      item.attributes = { ...item.attributes, status: { name } };
+      return item;
+    };
+    const degraded = createSmartcarService({ request: mockSmartcar(happyRoutes({ "/connections": ok({ data: [withStatus("DEGRADED")] }) })) });
+    expect(await degraded.get({ config })).toMatchObject({ state: "connected", batteryPercent: 76, rangeKm: 313 });
 
-    const revoked = { status: 400, json: { errors: [{ type: "CONNECTED_SERVICES_ACCOUNT", code: "PERMISSION", resolution: { type: "REAUTHENTICATE" } }] }, retryAfter: null };
-    const second = createSmartcarService({ request: mockSmartcar(happyRoutes({ "/vehicles/veh-1/signals": revoked })) });
-    expect((await second.get({ config })).state).toBe("reauth_required");
+    const onDiagnostic = vi.fn();
+    const disabled = createSmartcarService({ request: mockSmartcar(happyRoutes({ "/connections": ok({ data: [withStatus("DISABLED")] }) })), onDiagnostic });
+    expect((await disabled.get({ config })).state).toBe("reauth_required");
+    expect(onDiagnostic).toHaveBeenCalledWith("reauth_required source=connection status=DISABLED");
+  });
 
-    const perSignal = signal("tractionbattery-stateofcharge", null, { status: "ERROR", error: { type: "CONNECTED_SERVICES_ACCOUNT", code: "AUTHENTICATION_FAILED" } });
-    const third = createSmartcarService({ request: mockSmartcar(happyRoutes({ "/vehicles/veh-1/signals": ok({ data: [perSignal] }) })) });
-    expect((await third.get({ config })).state).toBe("reauth_required");
+  it("asks to re-authorize for a revoked account and logs only fixed codes", async () => {
+    const onDiagnostic = vi.fn();
+    const revoked = { status: 400, json: { errors: [{ type: "CONNECTED_SERVICES_ACCOUNT", code: "PERMISSION", detail: "user-1 veh-1", resolution: { type: "REAUTHENTICATE" } }] }, retryAfter: null };
+    const service = createSmartcarService({ request: mockSmartcar(happyRoutes({ "/vehicles/veh-1/signals": revoked })), onDiagnostic });
+    expect((await service.get({ config })).state).toBe("reauth_required");
+    const line = onDiagnostic.mock.calls[0][0];
+    expect(line).toBe("reauth_required source=signals status=400 error=CONNECTED_SERVICES_ACCOUNT/PERMISSION/REAUTHENTICATE connection=ACTIVE");
+    expect(line).not.toMatch(/user-1|veh-1|token|secret/);
+  });
+
+  it("shows the other values when one signal lacks permission", async () => {
+    const denied = signal("charge-ischargingcableconnected", null, { status: "ERROR", error: { type: "PERMISSION", code: null, resolution: { type: "REAUTHENTICATE" } } });
+    const data = [...allSignals().filter((item) => item.attributes.code !== "charge-ischargingcableconnected"), denied];
+    const service = createSmartcarService({ request: mockSmartcar(happyRoutes({ "/vehicles/veh-1/signals": ok({ data }) })) });
+    expect(await service.get({ config })).toMatchObject({ state: "connected", batteryPercent: 76, rangeKm: 313, isCharging: false, cableConnected: null });
+  });
+
+  it("asks to re-authorize when no signal is usable and Smartcar points to re-authentication", async () => {
+    const failed = (code) => signal(code, null, { status: "ERROR", error: { type: "CONNECTED_SERVICES_ACCOUNT", code: "AUTHENTICATION_FAILED" } });
+    const onDiagnostic = vi.fn();
+    const request = mockSmartcar(happyRoutes({ "/vehicles/veh-1/signals": ok({ data: [failed("tractionbattery-stateofcharge"), failed("tractionbattery-range")] }) }));
+    expect((await createSmartcarService({ request, onDiagnostic }).get({ config })).state).toBe("reauth_required");
+    expect(onDiagnostic).toHaveBeenCalledWith("reauth_required source=signal error=CONNECTED_SERVICES_ACCOUNT/AUTHENTICATION_FAILED/? count=2 connection=ACTIVE");
+  });
+
+  it("treats VEHICLE_MISSING and NO_VEHICLES as not connected instead of re-authorization", async () => {
+    const missing = (code) => ({ status: 404, json: { errors: [{ type: "RESOURCE_NOT_FOUND", code, resolution: { type: null } }] }, retryAfter: null });
+    const first = createSmartcarService({ request: mockSmartcar(happyRoutes({ "/vehicles/veh-1/signals": missing("VEHICLE_MISSING") })) });
+    expect((await first.get({ config })).state).toBe("not_connected");
+    const second = createSmartcarService({ request: mockSmartcar(happyRoutes({ "/connections": missing("NO_VEHICLES") })) });
+    expect((await second.get({ config })).state).toBe("not_connected");
   });
 
   it("accepts dotted signal codes, a string status and values sent as strings", async () => {

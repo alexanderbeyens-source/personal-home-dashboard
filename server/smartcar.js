@@ -23,7 +23,9 @@ export const SIGNALS = {
 };
 
 const STATE_MAX_AGE_MS = 15 * 60 * 1000;
-const REAUTH_CODES = new Set(["AUTHENTICATION_FAILED", "PERMISSION", "VEHICLE_MISSING", "NO_VEHICLES"]);
+// Errors that only a new Smartcar Connect flow fixes. VEHICLE_MISSING and NO_VEHICLES are not
+// among them (Smartcar documents no re-authentication for those): they mean "no vehicle".
+const NOT_CONNECTED_CODES = new Set(["VEHICLE_MISSING", "NO_VEHICLES"]);
 
 function configError(message, reason) {
   const error = new Error(message);
@@ -137,7 +139,15 @@ function firstError(json) {
 
 export function needsReauthentication(error) {
   if (!isObject(error)) return false;
-  return REAUTH_CODES.has(error.code) || error.resolution?.type === "REAUTHENTICATE";
+  if (error.resolution?.type === "REAUTHENTICATE") return true;
+  if (error.code === "AUTHENTICATION_FAILED") return true;
+  return error.code === "PERMISSION" && error.type === "CONNECTED_SERVICES_ACCOUNT";
+}
+
+// "type/code/resolution" from Smartcar's fixed vocabulary, for the reauth log line.
+function describeError(error) {
+  if (!isObject(error)) return "none";
+  return `${word(error.type)}/${word(error.code)}/${word(error.resolution?.type)}`;
 }
 
 // Picks the live connection to use: a healthy one first, then the newest.
@@ -318,9 +328,16 @@ export function createSmartcarService({
     throw new Error("unreachable");
   }
 
+  // Logs why the card asks to re-authorize, using only fixed Smartcar codes (no IDs or tokens).
+  function reauth(vehicle, source, detail) {
+    onDiagnostic(`reauth_required source=${source} ${detail}`);
+    return { state: "reauth_required", vehicle };
+  }
+
   function failure(response, label) {
     const error = firstError(response.json);
-    if (needsReauthentication(error)) return { reauth: true };
+    if (needsReauthentication(error)) return { reauth: true, detail: `status=${response.status} error=${describeError(error)}` };
+    if (NOT_CONNECTED_CODES.has(error?.code)) return { notConnected: true };
     if (response.status === 401) {
       return { error: configError("Smartcar weigerde de toegang van Northstar. Controleer de instellingen in Render.", "invalid-credentials") };
     }
@@ -337,20 +354,23 @@ export function createSmartcarService({
     const connections = await apiGet(config, "/connections?filter%5Bvehicle.mode%5D=live&page%5Bsize%5D=50");
     if (connections.status < 200 || connections.status >= 300) {
       const result = failure(connections, "connections");
-      if (result.reauth) return { state: "reauth_required", vehicle: null };
+      if (result.reauth) return reauth(null, "connections", result.detail);
+      if (result.notConnected) return { state: "not_connected", vehicle: null };
       throw result.error;
     }
     const connection = pickConnection(connections.json);
     if (!connection) return { state: "not_connected", vehicle: null };
-    if (connection.status === "DEGRADED" || connection.status === "DISABLED") {
-      return { state: "reauth_required", vehicle: connection.vehicle };
-    }
+    // DISABLED: Smartcar stopped calling Mercedes, the owner must reconnect. DEGRADED only means
+    // repeated OEM sign-in failures while requests are still attempted, so the signals are still
+    // read and only a re-authentication error from them asks for a new Connect flow.
+    if (connection.status === "DISABLED") return reauth(connection.vehicle, "connection", "status=DISABLED");
 
     const vehiclePath = `/vehicles/${encodeURIComponent(connection.vehicleId)}/signals`;
     const listed = await apiGet(config, vehiclePath, connection.userId);
     if (listed.status < 200 || listed.status >= 300) {
       const result = failure(listed, "signals");
-      if (result.reauth) return { state: "reauth_required", vehicle: connection.vehicle };
+      if (result.reauth) return reauth(connection.vehicle, "signals", `${result.detail} connection=${word(connection.status)}`);
+      if (result.notConnected) return { state: "not_connected", vehicle: null };
       throw result.error;
     }
     const signals = new Map();
@@ -359,23 +379,27 @@ export function createSmartcarService({
       const signal = readSignal(resource);
       if (signal?.code) signals.set(signal.code, signal);
     }
-    if ([...signals.values()].some((signal) => needsReauthentication(signal.error))) {
-      return { state: "reauth_required", vehicle: connection.vehicle };
-    }
     // The list call is undocumented about paging; fetch the two essential signals one by one
     // only if the list did not contain them at all.
     const missing = [SIGNALS.stateOfCharge, SIGNALS.range].filter((code) => !signals.has(code));
     const single = await Promise.all(missing.map((code) => apiGet(config, `${vehiclePath}/${code}`, connection.userId)));
+    const reauthErrors = [];
     for (const response of single) {
       if (response.status >= 200 && response.status < 300) {
         const signal = readSignal(response.json?.data);
         if (signal?.code) signals.set(signal.code, signal);
       } else if (needsReauthentication(firstError(response.json))) {
-        return { state: "reauth_required", vehicle: connection.vehicle };
+        reauthErrors.push(firstError(response.json));
       }
     }
+    for (const signal of signals.values()) if (needsReauthentication(signal.error)) reauthErrors.push(signal.error);
     const values = mapSignals(signals);
     if (values.batteryPercent === null && values.rangeKm === null && values.isCharging === null && values.cableConnected === null) {
+      // One signal without permission must not hide the others: only ask for a new Connect flow
+      // when nothing usable came back and Smartcar itself points to re-authentication.
+      if (reauthErrors.length) {
+        return reauth(connection.vehicle, "signal", `error=${describeError(reauthErrors[0])} count=${reauthErrors.length} connection=${word(connection.status)}`);
+      }
       const vehicleError = [...signals.values()].map((signal) => signal.error).find(Boolean);
       const reason = ["ASLEEP", "UNREACHABLE"].includes(vehicleError?.code) ? "vehicle-offline" : "no-signals";
       const error = smartcarError("Smartcar gaf geen bruikbare voertuigwaarden.", { kind: "invalid-response", reason });
