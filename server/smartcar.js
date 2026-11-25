@@ -163,24 +163,37 @@ export function pickConnection(json) {
   return connections[0];
 }
 
+// "tractionbattery-stateofcharge", "TractionBattery.StateOfCharge" → "tractionbatterystateofcharge".
+const normalizeCode = (code) => code.toLowerCase().replace(/[^a-z0-9]/g, "");
+const SIGNAL_BY_NORMALIZED = new Map(Object.values(SIGNALS).map((code) => [normalizeCode(code), code]));
+
 // Normalizes a signal resource (from the list or a single GET) to { code, ok, body, error, meta }.
+// code is the canonical SIGNALS value, or null for a signal Northstar does not use.
 function readSignal(resource) {
   if (!isObject(resource)) return null;
   const attributes = isObject(resource.attributes) ? resource.attributes : {};
-  const code = typeof attributes.code === "string" ? attributes.code : typeof resource.id === "string" ? resource.id : null;
-  if (!code) return null;
-  const status = attributes.status?.value ?? "SUCCESS";
+  const rawCode = typeof attributes.code === "string" ? attributes.code : typeof resource.id === "string" ? resource.id : null;
+  if (!rawCode) return null;
+  const rawStatus = typeof attributes.status === "string" ? attributes.status : attributes.status?.value;
+  const status = typeof rawStatus === "string" ? rawStatus.toUpperCase() : "SUCCESS";
+  const body = isObject(attributes.body) ? attributes.body : "value" in attributes ? { value: attributes.value, unit: attributes.unit } : null;
   return {
-    code: code.toLowerCase(),
-    ok: status === "SUCCESS" && isObject(attributes.body),
-    body: isObject(attributes.body) ? attributes.body : null,
+    code: SIGNAL_BY_NORMALIZED.get(normalizeCode(rawCode)) ?? null,
+    rawCode,
+    status,
+    ok: status === "SUCCESS" && body !== null,
+    body,
     error: isObject(attributes.status?.error) ? attributes.status.error : null,
     oemUpdatedAt: isoOrNull(resource.meta?.oemUpdatedAt),
     retrievedAt: isoOrNull(resource.meta?.retrievedAt),
   };
 }
 
-const finite = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+const finite = (value) => {
+  const number = typeof value === "string" && value.trim() ? Number(value) : value;
+  return typeof number === "number" && Number.isFinite(number) ? number : null;
+};
+const bool = (value) => (typeof value === "boolean" ? value : value === "true" ? true : value === "false" ? false : null);
 
 function rangeInKm(body) {
   const value = finite(body?.value);
@@ -195,18 +208,56 @@ function rangeInKm(body) {
 export function mapSignals(signalsByCode) {
   const get = (code) => (signalsByCode.get(code)?.ok ? signalsByCode.get(code).body : null);
   const percent = finite(get(SIGNALS.stateOfCharge)?.value);
-  const isCharging = get(SIGNALS.isCharging)?.value;
-  const cable = get(SIGNALS.cableConnected)?.value;
+  const isCharging = bool(get(SIGNALS.isCharging)?.value);
+  const cable = bool(get(SIGNALS.cableConnected)?.value);
   const times = [...signalsByCode.values()].filter((signal) => signal.ok);
   const latest = (key) => times.map((signal) => signal[key]).filter(Boolean).sort().at(-1) ?? null;
   return {
     batteryPercent: percent !== null && percent >= 0 && percent <= 100 ? Math.round(percent) : null,
     rangeKm: rangeInKm(get(SIGNALS.range)),
-    isCharging: typeof isCharging === "boolean" ? isCharging : null,
-    cableConnected: typeof cable === "boolean" ? cable : null,
+    isCharging,
+    cableConnected: cable,
     reportedAt: latest("oemUpdatedAt"),
     retrievedAt: latest("retrievedAt"),
   };
+}
+
+// Fixed, owner-facing explanations for a failure without an earlier value to show.
+export const UNAVAILABLE_MESSAGES = {
+  "vehicle-offline": "Data tijdelijk niet beschikbaar: de auto slaapt of heeft geen bereik. Northstar probeert het later opnieuw.",
+  "no-signals": "Data tijdelijk niet beschikbaar: Smartcar gaf geen batterij- of laadwaarden door. Controleer de toestemmingen onder Vehicle Access in het Smartcar-dashboard.",
+  "rate-limited": "Data tijdelijk niet beschikbaar: te veel verzoeken bij Smartcar. Northstar probeert het later opnieuw.",
+  "plan-limit": "Data tijdelijk niet beschikbaar: de maandlimiet van het Smartcar-plan is bereikt.",
+  upstream: "Data tijdelijk niet beschikbaar: Smartcar is momenteel niet bereikbaar.",
+};
+
+function unavailableError(error) {
+  error.status = 502;
+  error.code = "vehicle_unavailable";
+  error.message = UNAVAILABLE_MESSAGES[error.reason] ?? UNAVAILABLE_MESSAGES.upstream;
+  return error;
+}
+
+// A log line that explains why no value could be read, built only from Smartcar's fixed
+// vocabulary (field names, signal codes, status and error codes, value types). It never contains
+// values, vehicle or user IDs, tokens or URLs.
+const SAFE_WORD = /^[A-Za-z][A-Za-z0-9_.-]{0,60}$/;
+const word = (value) => (typeof value === "string" && SAFE_WORD.test(value) ? value : "?");
+
+function describeSignals({ listed, listedResources, signals, single }) {
+  const keys = isObject(listed.json) ? Object.keys(listed.json).slice(0, 8).map(word).join(",") : typeof listed.json;
+  const codes = listedResources.slice(0, 20).map((resource) => {
+    const signal = readSignal(resource);
+    return signal ? `${word(signal.rawCode)}:${word(signal.status)}` : "unreadable";
+  });
+  const wanted = Object.entries(SIGNALS).map(([name, code]) => {
+    const signal = signals.get(code);
+    if (!signal) return `${name}=missing`;
+    const valueType = signal.body ? typeof signal.body.value : "nobody";
+    return `${name}=${word(signal.status)}/${valueType}${signal.error ? `/${word(signal.error.code)}` : ""}`;
+  });
+  const singles = single.map((response) => String(response.status)).join(",") || "none";
+  return `list status=${listed.status} keys=${keys} items=${listedResources.length} codes=${codes.join(",") || "none"} wanted=${wanted.join(",")} single=${singles}`;
 }
 
 // --- Service ------------------------------------------------------------------------------
@@ -220,6 +271,7 @@ export function createSmartcarService({
   minRefreshMs = 5 * 60 * 1000,
   retryMs = 5 * 60 * 1000,
   onError = () => {},
+  onDiagnostic = () => {},
 }) {
   let token = null;
   let cache = null; // { key, value, expiresAt, fetchedAt }
@@ -241,7 +293,11 @@ export function createSmartcarService({
     }
     if (response.status < 200 || response.status >= 300) throw smartcarError("Smartcar-aanmelding mislukte.", { status: response.status });
     const value = response.json?.access_token;
-    if (typeof value !== "string" || !value) throw smartcarError("Smartcar gaf geen geldig token.", { kind: "invalid-response" });
+    if (typeof value !== "string" || !value) {
+      const error = smartcarError("Smartcar gaf geen geldig token.", { kind: "invalid-response" });
+      error.diagnostic = `token status=${response.status} keys=${isObject(response.json) ? Object.keys(response.json).slice(0, 8).map(word).join(",") : typeof response.json}`;
+      throw error;
+    }
     const lifetime = Number.isFinite(response.json?.expires_in) ? response.json.expires_in : 3600;
     token = { clientId: config.clientId, value, expiresAt: now() + Math.max(60, lifetime - 120) * 1000 };
     return value;
@@ -297,11 +353,11 @@ export function createSmartcarService({
       if (result.reauth) return { state: "reauth_required", vehicle: connection.vehicle };
       throw result.error;
     }
-    const wanted = new Set(Object.values(SIGNALS));
     const signals = new Map();
-    for (const resource of Array.isArray(listed.json?.data) ? listed.json.data : []) {
+    const listedResources = Array.isArray(listed.json?.data) ? listed.json.data : [];
+    for (const resource of listedResources) {
       const signal = readSignal(resource);
-      if (signal && wanted.has(signal.code)) signals.set(signal.code, signal);
+      if (signal?.code) signals.set(signal.code, signal);
     }
     if ([...signals.values()].some((signal) => needsReauthentication(signal.error))) {
       return { state: "reauth_required", vehicle: connection.vehicle };
@@ -313,7 +369,7 @@ export function createSmartcarService({
     for (const response of single) {
       if (response.status >= 200 && response.status < 300) {
         const signal = readSignal(response.json?.data);
-        if (signal && wanted.has(signal.code)) signals.set(signal.code, signal);
+        if (signal?.code) signals.set(signal.code, signal);
       } else if (needsReauthentication(firstError(response.json))) {
         return { state: "reauth_required", vehicle: connection.vehicle };
       }
@@ -322,7 +378,9 @@ export function createSmartcarService({
     if (values.batteryPercent === null && values.rangeKm === null && values.isCharging === null && values.cableConnected === null) {
       const vehicleError = [...signals.values()].map((signal) => signal.error).find(Boolean);
       const reason = ["ASLEEP", "UNREACHABLE"].includes(vehicleError?.code) ? "vehicle-offline" : "no-signals";
-      throw smartcarError("Smartcar gaf geen bruikbare voertuigwaarden.", { kind: "invalid-response", reason });
+      const error = smartcarError("Smartcar gaf geen bruikbare voertuigwaarden.", { kind: "invalid-response", reason });
+      error.diagnostic = describeSignals({ listed, listedResources, signals, single });
+      throw error;
     }
     return { state: "connected", vehicle: connection.vehicle, ...values };
   }
@@ -336,8 +394,7 @@ export function createSmartcarService({
       if (fresh && !refreshAllowed) return cache.value;
     }
     if (blocked && blocked.key === key && blocked.until > currentTime) {
-      const error = smartcarError("Smartcar is tijdelijk niet bereikbaar.", { kind: blocked.error.kind, reason: blocked.error.reason });
-      error.status = 502;
+      const error = unavailableError(smartcarError("Smartcar is tijdelijk niet bereikbaar.", { kind: blocked.error.kind, status: blocked.error.upstreamStatus, reason: blocked.error.reason }));
       error.repeated = true;
       throw error;
     }
@@ -357,6 +414,7 @@ export function createSmartcarService({
         return value;
       } catch (error) {
         if (error.code === "invalid_config") throw error;
+        if (error.diagnostic) onDiagnostic(error.diagnostic);
         const backoff = Math.max(retryMs, error.retryAfterMs ?? 0);
         if (lastGood && lastGood.key === key) {
           onError(error);
@@ -368,8 +426,7 @@ export function createSmartcarService({
         // dashboard opens do not keep calling Smartcar (rate and monthly limits).
         cache = null;
         blocked = { key, error, until: now() + backoff };
-        error.status = 502;
-        throw error;
+        throw unavailableError(error);
       } finally {
         inFlight = null;
       }

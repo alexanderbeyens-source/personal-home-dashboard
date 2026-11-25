@@ -240,6 +240,32 @@ describe("createSmartcarService", () => {
     expect((await third.get({ config })).state).toBe("reauth_required");
   });
 
+  it("accepts dotted signal codes, a string status and values sent as strings", async () => {
+    const odd = (code, value) => ({ id: code, type: "signal", attributes: { code, status: "success", body: { value } }, meta: { oemUpdatedAt: "2026-11-25T09:58:00Z" } });
+    const request = mockSmartcar(happyRoutes({
+      "/vehicles/veh-1/signals": ok({ data: [odd("TractionBattery.StateOfCharge", "64"), odd("TractionBattery.Range", "250"), odd("Charge.IsCharging", "true")] }),
+    }));
+    const value = await createSmartcarService({ request }).get({ config });
+    expect(value).toMatchObject({ batteryPercent: 64, rangeKm: 250, isCharging: true, cableConnected: null });
+  });
+
+  it("explains a response without usable values and logs only a safe diagnostic", async () => {
+    const onDiagnostic = vi.fn();
+    const unavailable = (code) => signal(code, null, { status: "UNAVAILABLE" });
+    const request = mockSmartcar(happyRoutes({
+      "/vehicles/veh-1/signals": ok({ data: [unavailable("tractionbattery-stateofcharge"), unavailable("tractionbattery-range"), signal("location-preciselocation", { latitude: 50.98, longitude: 5.05 })] }),
+    }));
+    const error = await createSmartcarService({ request, onDiagnostic }).get({ config }).catch((caught) => caught);
+    expect(error).toMatchObject({ status: 502, code: "vehicle_unavailable", reason: "no-signals" });
+    expect(error.message).toMatch(/Vehicle Access/);
+    expect(onDiagnostic).toHaveBeenCalledTimes(1);
+    const line = onDiagnostic.mock.calls[0][0];
+    expect(line).toContain("stateOfCharge=UNAVAILABLE");
+    expect(line).toContain("isCharging=missing");
+    expect(line).toContain("location-preciselocation:SUCCESS");
+    expect(line).not.toMatch(/50\.98|5\.05|veh-1|user-1|app-token/);
+  });
+
   it("falls back to single-signal requests when the list misses battery or range", async () => {
     const request = mockSmartcar(happyRoutes({
       "/vehicles/veh-1/signals": ok({ data: [signal("charge-ischarging", { value: true })] }),
