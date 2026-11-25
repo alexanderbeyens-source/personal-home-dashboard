@@ -49,3 +49,5 @@ services:
         sync: false
       - key: INTERVALS_API_KEY
         sync: false
+      - key: DUOLINGO_USERNAME
+        sync: false

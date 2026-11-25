@@ -481,3 +481,25 @@ export interface ImieHistory {
   stale: boolean;
   splits: { date: string; ratio: number }[];
 }
+
+export interface DuolingoCourse {
+  id: string;
+  title: string;
+  learningLanguage: string | null;
+  xp: number | null;
+}
+
+export interface DuolingoData {
+  today: string;
+  streak: number | null;
+  streakStart: string | null;
+  lastPracticeDate: string | null;
+  /** practiced: streak extended today; pending: extended yesterday, still to do today; broken: lost. */
+  status: "practiced" | "pending" | "broken" | null;
+  totalXp: number | null;
+  currentCourse: DuolingoCourse | null;
+  courses: DuolingoCourse[];
+  stale: boolean;
+  updatedAt: string;
+  profileUrl: string;
+}
