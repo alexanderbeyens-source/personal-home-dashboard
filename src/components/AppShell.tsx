@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { SnuggleSquad } from "./SnuggleSquad";
 
 export interface AuthUser {
   id: string;
@@ -66,6 +67,7 @@ export function AppShell({
             ))}
           </nav>
           <div className="account">
+            <SnuggleSquad />
             <span className="account-name">{user.name || "Aangemeld"}</span>
             <button className="button-ghost" type="button" onClick={() => onSignOut(csrfToken)}>Afmelden</button>
           </div>
